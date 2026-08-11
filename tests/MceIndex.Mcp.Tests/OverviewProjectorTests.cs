@@ -5,6 +5,7 @@ namespace MceIndex.Mcp.Tests;
 
 public sealed class OverviewProjectorTests
 {
+
     [Fact]
     public void ReturnsEveryReadingVisibleOnMonthlyOverview()
     {
@@ -48,6 +49,7 @@ public sealed class OverviewProjectorTests
             Assert.NotNull(reading.Verification);
             Assert.Equal("2026-06", reading.Verification.AuditedPeriod);
             Assert.True(reading.Verification.AppliesToCurrentPeriod);
+            Assert.False(reading.Verification.DataUpdated);
             Assert.NotEqual(ConclusionStatus.NotAssessed, reading.Verification.Status);
             Assert.False(string.IsNullOrWhiteSpace(reading.Verification.Summary));
         });
@@ -88,20 +90,25 @@ public sealed class OverviewProjectorTests
     }
 
     [Fact]
-    public void DoesNotApplyJuneAuditToAnotherPeriod()
+    public void KeepsLastAuditAndMarksUpdatedData()
     {
         var verification = OverviewVerificationProjector.Build(
             "LEI-GDP",
             "industryScaleShare",
             "2026-07");
 
-        Assert.Equal(ConclusionStatus.NotAssessed, verification.Status);
+        Assert.Equal("2026-06", verification.AuditedPeriod);
         Assert.False(verification.AppliesToCurrentPeriod);
-        Assert.Empty(verification.Sources);
+        Assert.True(verification.DataUpdated);
+        Assert.Equal(ConclusionStatus.NotFound, verification.Status);
+        Assert.Equal(EvidenceStatus.Partial, verification.SourceStatus);
+        Assert.Equal(AlgorithmStatus.Published, verification.AlgorithmStatus);
+        Assert.Equal(ReproductionStatus.Impossible, verification.ReproductionStatus);
+        Assert.False(verification.IndependentExactMatch);
+        Assert.False(string.IsNullOrWhiteSpace(verification.Summary));
+        Assert.NotEmpty(verification.Sources);
+        Assert.NotEmpty(verification.Limitations);
         Assert.NotNull(verification.ConceptualProvenance);
-        Assert.Equal(
-            ConceptualProvenanceStatus.PartiallyVerified,
-            verification.ConceptualProvenance.Status);
     }
 
     private static void AssertStatus(

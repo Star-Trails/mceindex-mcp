@@ -35,7 +35,7 @@ public sealed class StdioIntegrationTests
             await using var client = await McpClient.CreateAsync(transport, cancellationToken: cancellationToken);
             Assert.Equal("MCEIndex", client.ServerInfo.Title);
             Assert.Equal("mceindex-mcp", client.ServerInfo.Name);
-            Assert.Equal("3.7.0", client.ServerInfo.Version);
+            Assert.Equal("3.8.0", client.ServerInfo.Version);
 
             var tools = await client.ListToolsAsync(cancellationToken: cancellationToken);
             Assert.Equal(
@@ -86,6 +86,7 @@ public sealed class StdioIntegrationTests
             Assert.Equal("published", verification.GetProperty("algorithmStatus").GetString());
             Assert.Equal("impossible", verification.GetProperty("reproductionStatus").GetString());
             Assert.True(verification.GetProperty("appliesToCurrentPeriod").GetBoolean());
+            Assert.False(verification.GetProperty("dataUpdated").GetBoolean());
             Assert.True(verification.GetProperty("sources").GetArrayLength() >= 2);
             var conceptualProvenance = verification.GetProperty("conceptualProvenance");
             Assert.Equal(

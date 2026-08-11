@@ -47,14 +47,14 @@ dotnet restore
 dotnet pack src/MceIndex.Mcp/MceIndex.Mcp.csproj -c Release -o artifacts
 ```
 
-打包产物位于 `artifacts/MCEIndex.Mcp.3.7.0.nupkg`。
+打包产物位于 `artifacts/MCEIndex.Mcp.3.8.0.nupkg`。
 
 ### 3. 安装
 
 将 `<TOOL_PATH>` 替换为工具安装目录：
 
 ```text
-dotnet tool install --tool-path "<TOOL_PATH>" --add-source ./artifacts MCEIndex.Mcp --version 3.7.0
+dotnet tool install --tool-path "<TOOL_PATH>" --add-source ./artifacts MCEIndex.Mcp --version 3.8.0
 dotnet tool list --tool-path "<TOOL_PATH>"
 ```
 
@@ -64,12 +64,12 @@ dotnet tool list --tool-path "<TOOL_PATH>"
 | Linux | `/home/USER/.local/share/mceindex-mcp` | `/home/USER/.local/share/mceindex-mcp/mceindex-mcp` |
 | macOS | `/Users/USER/.local/share/mceindex-mcp` | `/Users/USER/.local/share/mceindex-mcp/mceindex-mcp` |
 
-安装成功后，`dotnet tool list` 显示 `mceindex.mcp 3.7.0`。
+安装成功后，`dotnet tool list` 显示 `mceindex.mcp 3.8.0`。
 
 ### 更新与卸载
 
 ```text
-dotnet tool update --tool-path "<TOOL_PATH>" --add-source ./artifacts MCEIndex.Mcp --version 3.7.0 --no-cache
+dotnet tool update --tool-path "<TOOL_PATH>" --add-source ./artifacts MCEIndex.Mcp --version 3.8.0 --no-cache
 dotnet tool uninstall --tool-path "<TOOL_PATH>" MCEIndex.Mcp
 ```
 
@@ -115,7 +115,7 @@ MCEINDEX_BROWSER_EXECUTABLE=<Chrome 或 Chromium 可执行文件绝对路径>
 | `search_index` | 搜索中文内容或指标代码 | `query`、`page`、`kind`、`mode`、`offset`、`limit` |
 | `refresh_index` | 刷新全部栏目 | `force=false` |
 
-`get_latest` 的读数包含网站值、统计期、来源和核验信息。`get_page` 与 `search_index` 使用 `offset` 和 `limit` 分页。
+`get_latest` 的读数包含网站值、统计期、来源和完整核验信息。数据期晚于审计期时保留上次审计的可信度、来源、算法和复现记录，并标注 `auditedPeriod`、`appliesToCurrentPeriod=false` 和 `dataUpdated=true`。`get_page` 与 `search_index` 使用 `offset` 和 `limit` 分页。
 
 `discover_data` 汇总六个主题、当前读数、指标意义、典型问题、页面目录和后续查询建议，适合在指标名称未知或问题范围较宽时使用。
 

@@ -242,30 +242,45 @@ internal static class OverviewVerificationProjector
     {
         var auditKey = $"{code}:{key}";
         ConceptualProvenances.TryGetValue(auditKey, out var conceptualProvenance);
+        Audits.TryGetValue(auditKey, out var verification);
 
         if (!string.Equals(period, AuditedPeriod, StringComparison.Ordinal))
         {
-            return new ConclusionVerification(
-                AuditedPeriod,
-                false,
-                ConclusionStatus.NotAssessed,
-                EvidenceStatus.NotAssessed,
-                AlgorithmStatus.NotAssessed,
-                ReproductionStatus.NotAssessed,
-                false,
-                $"该审计仅适用于{AuditedPeriod}；当前统计期{period ?? "未知"}尚未核验。",
-                null,
-                null,
-                [],
-                ["不得把历史审计标签套用到新月份。"],
-                conceptualProvenance);
+            return verification is not null
+                ? verification with
+                {
+                    AppliesToCurrentPeriod = false,
+                    DataUpdated = true,
+                    ConceptualProvenance = conceptualProvenance,
+                }
+                : new ConclusionVerification(
+                    AuditedPeriod,
+                    false,
+                    true,
+                    ConclusionStatus.NotAssessed,
+                    EvidenceStatus.NotAssessed,
+                    AlgorithmStatus.NotAssessed,
+                    ReproductionStatus.NotAssessed,
+                    false,
+                    "该读数尚未建立独立核验记录。",
+                    null,
+                    null,
+                    [],
+                    ["需要补充逐项审计。"],
+                    conceptualProvenance);
         }
 
-        return Audits.TryGetValue(auditKey, out var verification)
-            ? verification with { ConceptualProvenance = conceptualProvenance }
+        return verification is not null
+            ? verification with
+            {
+                AppliesToCurrentPeriod = true,
+                DataUpdated = false,
+                ConceptualProvenance = conceptualProvenance,
+            }
             : new ConclusionVerification(
                 AuditedPeriod,
                 true,
+                false,
                 ConclusionStatus.NotAssessed,
                 EvidenceStatus.NotAssessed,
                 AlgorithmStatus.NotAssessed,
@@ -297,6 +312,6 @@ internal static class OverviewVerificationProjector
         string? reproduction,
         EvidenceSource[] sources,
         params string[] limitations) =>
-        new(AuditedPeriod, true, status, sourceStatus, algorithmStatus, reproductionStatus,
+        new(AuditedPeriod, true, false, status, sourceStatus, algorithmStatus, reproductionStatus,
             independentExactMatch, summary, formula, reproduction, sources, limitations);
 }

@@ -26,7 +26,7 @@ public sealed class MceIndexTools(MceIndexService service)
 
     [McpServerTool(Name = "get_latest", Title = "获取最新中国经济指数", ReadOnly = false,
         Destructive = false, Idempotent = true, OpenWorld = true, UseStructuredContent = true)]
-    [Description("直接返回与网站月度总览首屏一致的六组结构化读数。每个 reading 均包含按审计月份限定的 verification：结论可信度、来源状态、算法状态、复现状态、独立同值、公式、复算过程、权威来源和限制条件；相关读数另含 conceptualProvenance，单独标注发布方影片能支持的指标动机，不把方法思想误作数值验证；新月份不会沿用旧数值审计标签。每组 notes 同时保留网站原始公式和方法文本。当前 MCP 服务进程的首次查询会先刷新数据，后续调用只读取本地 SQLite。")]
+    [Description("返回月度总览的六组结构化读数。verification 包含可信度、来源、算法、复现、公式和限制条件；数据期晚于审计期时继续返回上次审计记录，并标注 auditedPeriod、appliesToCurrentPeriod=false 和 dataUpdated=true。每组 notes 保留网站原始公式和方法文本。当前 MCP 服务进程的首次查询会先刷新数据，后续调用只读取本地 SQLite。")]
     public Task<LatestOverview> GetLatestAsync(CancellationToken cancellationToken) =>
         InvokeAsync(() => service.GetLatestAsync(cancellationToken));
 

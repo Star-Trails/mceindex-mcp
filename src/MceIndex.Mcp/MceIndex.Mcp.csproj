@@ -3,7 +3,7 @@
     <OutputType>Exe</OutputType>
     <AssemblyName>mceindex-mcp</AssemblyName>
     <RootNamespace>MceIndex.Mcp</RootNamespace>
-    <Version>3.7.0</Version>
+    <Version>3.8.0</Version>
     <Description>Local indexed MCP server for MCEIndex (Meaningful China Economic Index)</Description>
     <Authors>MCEIndex MCP contributors</Authors>
     <PackageId>MCEIndex.Mcp</PackageId>

@@ -242,6 +242,7 @@ public sealed record ConceptualProvenance(
 public sealed record ConclusionVerification(
     string AuditedPeriod,
     bool AppliesToCurrentPeriod,
+    bool DataUpdated,
     ConclusionStatus Status,
     EvidenceStatus SourceStatus,
     AlgorithmStatus AlgorithmStatus,
