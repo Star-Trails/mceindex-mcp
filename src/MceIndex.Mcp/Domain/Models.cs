@@ -255,6 +255,49 @@ public sealed record ConclusionVerification(
     string[] Limitations,
     ConceptualProvenance? ConceptualProvenance = null);
 
+public enum TrendDirection
+{
+    Rising,
+    Falling,
+    Stable,
+    Mixed,
+    InsufficientData,
+}
+
+public enum EconomicAssessment
+{
+    Improving,
+    Deteriorating,
+    Stable,
+    Mixed,
+    Indeterminate,
+    InsufficientData,
+}
+
+public sealed record HistoricalObservation(string Period, double Value);
+
+public sealed record IndicatorTrend(
+    string SeriesKey,
+    string Label,
+    string Unit,
+    int AvailablePeriods,
+    HistoricalObservation[] History,
+    string CurrentPeriod,
+    double Current,
+    string? PreviousPeriod,
+    double? Previous,
+    double? MonthOverMonthChange,
+    string? YearAgoPeriod,
+    double? YearAgo,
+    double? YearOverYearChange,
+    double? RecentThreeMonthAverage,
+    double? PreviousThreeMonthAverage,
+    double? ThreeMonthMomentum,
+    TrendDirection Direction,
+    EconomicAssessment Assessment,
+    string Basis,
+    string Interpretation);
+
 public sealed record OverviewReading(
     string Key,
     string Label,
@@ -268,7 +311,8 @@ public sealed record OverviewSection(
     string? Period,
     string Description,
     OverviewReading[] Readings,
-    OverviewNote[] Notes);
+    OverviewNote[] Notes,
+    IndicatorTrend? Trend = null);
 
 public sealed record LatestOverview(
     string SourceUrl,
@@ -319,7 +363,8 @@ public sealed record DiscoveryTopic(
     string SuggestedQuestion,
     DiscoveryReading[] CurrentReadings,
     string DetailTool,
-    string DetailArgument);
+    string DetailArgument,
+    IndicatorTrend? Trend = null);
 
 public sealed record ToolRecommendation(
     string Need,
@@ -342,4 +387,5 @@ public sealed record IndicatorResult(
     IndexCard Indicator,
     string SourceUrl,
     DateTimeOffset FetchedAt,
-    long Generation);
+    long Generation,
+    IndicatorTrend? Trend);

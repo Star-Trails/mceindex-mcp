@@ -43,20 +43,20 @@ node --version
 .NET 10 的 `dnx` 会从 NuGet 下载、缓存并启动工具：
 
 ```bash
-dnx MCEIndex.Mcp@3.8.1
+dnx MCEIndex.Mcp@3.9.0
 ```
 
 ### 3. 全局安装
 
 ```bash
-dotnet tool install --global MCEIndex.Mcp --version 3.8.1
+dotnet tool install --global MCEIndex.Mcp --version 3.9.0
 dotnet tool list --global
 ```
 
 更新或卸载：
 
 ```bash
-dotnet tool update --global MCEIndex.Mcp --version 3.8.1
+dotnet tool update --global MCEIndex.Mcp --version 3.9.0
 dotnet tool uninstall --global MCEIndex.Mcp
 ```
 
@@ -77,7 +77,7 @@ MCP 客户端可以通过 `dnx` 直接启动：
   "mcpServers": {
     "mceindex": {
       "command": "dnx",
-      "args": ["MCEIndex.Mcp@3.8.1"]
+      "args": ["MCEIndex.Mcp@3.9.0"]
     }
   }
 }
@@ -88,7 +88,7 @@ Codex 使用相同的启动方式：
 ```toml
 [mcp_servers.mceindex]
 command = "dnx"
-args = ["MCEIndex.Mcp@3.8.1"]
+args = ["MCEIndex.Mcp@3.9.0"]
 startup_timeout_sec = 60
 tool_timeout_sec = 180
 ```
@@ -106,17 +106,19 @@ MCEINDEX_BROWSER_EXECUTABLE=<Chrome 或 Chromium 可执行文件绝对路径>
 
 | 工具 | 用途 | 主要参数 |
 |---|---|---|
-| `discover_data` | 发现可查询主题、当前读数、指标意义和典型问题 | 无 |
-| `get_latest` | 返回月度总览的六组最新读数 | 无 |
-| `get_indicator` | 按代码或中文名称读取指标 | `indicator` |
+| `discover_data` | 发现可查询主题、当前读数、历史趋势及改善或恶化判断 | 无 |
+| `get_latest` | 返回六组最新读数及最近 13 个月趋势 | 无 |
+| `get_indicator` | 按代码或中文名称读取指标及历史序列 | `indicator`、`months=24` |
 | `list_pages` | 列出已索引栏目和刷新状态 | 无 |
 | `get_page` | 读取栏目摘要、正文、表格或图表 | `page`、`view`、`offset`、`limit` |
 | `search_index` | 搜索中文内容或指标代码 | `query`、`page`、`kind`、`mode`、`offset`、`limit` |
 | `refresh_index` | 刷新全部栏目 | `force=false` |
 
-`get_latest` 的读数包含网站值、统计期、来源和完整核验信息。数据期晚于审计期时保留上次审计的可信度、来源、算法和复现记录，并标注 `auditedPeriod`、`appliesToCurrentPeriod=false` 和 `dataUpdated=true`。`get_page` 与 `search_index` 使用 `offset` 和 `limit` 分页。
+`get_latest` 的每组 `trend` 包含历史序列、环比变化、同比变化、最近 3 个月均值相对前 3 个月的动量、`direction`、`assessment`、判断依据和口径解释。`direction` 描述数值走势；`assessment` 才表示经济含义。产业规模、就业、净财政贡献和消费按指标方向返回 `improving`、`deteriorating`、`stable` 或 `mixed`。CPI 和社融不能仅凭升降判断经济好坏，因此返回 `indeterminate`，避免制造虚假结论。历史不足时返回 `insufficientData`。
 
-`discover_data` 汇总六个主题、当前读数、指标意义、典型问题、页面目录和后续查询建议，适合在指标名称未知或问题范围较宽时使用。
+`get_indicator` 的 `months` 控制返回窗口，范围 2–120，默认 24。例如 `indicator=LEI-GDP, months=36`。环比和同比变化使用原序列单位；百分比指标表示百分点变化，不计算跨零时容易误导的相对百分比。读数同时保留网站值、统计期、来源和完整核验信息。数据期晚于审计期时保留上次审计的可信度、来源、算法和复现记录，并标注 `auditedPeriod`、`appliesToCurrentPeriod=false` 和 `dataUpdated=true`。`get_page` 与 `search_index` 使用 `offset` 和 `limit` 分页。
+
+`discover_data` 汇总六个主题、当前读数、趋势判断、指标意义、典型问题、页面目录和后续查询建议，适合在指标名称未知或问题范围较宽时使用。
 
 ## 数据更新
 

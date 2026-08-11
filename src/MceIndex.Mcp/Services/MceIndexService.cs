@@ -14,25 +14,20 @@ public sealed class MceIndexService(MceIndexStore store, RefreshCoordinator refr
             ?? throw new MceIndexException(MceIndexErrorCode.IndexEmpty,
                 "The local index does not contain the monthly overview.");
         var cards = store.GetCards(overview.Summary.Slug);
-        var evidencePages = new Dictionary<string, StoredPage>(StringComparer.Ordinal);
-        foreach (var slug in new[]
+        var evidencePages = GetEvidencePages();
+        var sections = OverviewProjector.Build(cards, overview.Snapshot.Charts, evidencePages);
+        for (var index = 0; index < sections.Length; index++)
         {
-            "LI_Monthly",
-            "Meaningful_Retail",
-            "Meaningful_CPI_PPI",
-            "Meaningful_TSF",
-        })
-        {
-            if (store.FindPage(slug) is { } page)
+            sections[index] = sections[index] with
             {
-                evidencePages.Add(slug, page);
-            }
+                Trend = IndicatorTrendProjector.Build(sections[index].Code, evidencePages, 13),
+            };
         }
         return new LatestOverview(
             overview.Summary.SourceUrl,
             overview.Summary.FetchedAt,
             refreshCoordinator.GetStatus().Generation,
-            OverviewProjector.Build(cards, overview.Snapshot.Charts, evidencePages),
+            sections,
             cards,
             overview.Snapshot.Headings.Select(heading => heading.Text).ToArray(),
             overview.Snapshot.Text.Where(value => value.Length >= 20).Take(12).ToArray());
@@ -44,7 +39,10 @@ public sealed class MceIndexService(MceIndexStore store, RefreshCoordinator refr
         return DataDiscoveryProjector.Build(latest, store.ListPages());
     }
 
-    public async Task<IndicatorResult> GetIndicatorAsync(string query, CancellationToken cancellationToken)
+    public async Task<IndicatorResult> GetIndicatorAsync(
+        string query,
+        int months,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(query) || query.Length > 100)
         {
@@ -52,6 +50,13 @@ public sealed class MceIndexService(MceIndexStore store, RefreshCoordinator refr
                 MceIndexErrorCode.InvalidConfiguration,
                 "Indicator must be a code or Chinese label between 1 and 100 characters.");
         }
+        if (months is < 2 or > 120)
+        {
+            throw new MceIndexException(
+                MceIndexErrorCode.InvalidConfiguration,
+                "History window must be between 2 and 120 months.");
+        }
+
 
         var latest = await GetLatestAsync(cancellationToken).ConfigureAwait(false);
         var indicator = latest.Cards.FirstOrDefault(card =>
@@ -68,7 +73,8 @@ public sealed class MceIndexService(MceIndexStore store, RefreshCoordinator refr
                 });
         }
 
-        return new IndicatorResult(indicator, latest.SourceUrl, latest.FetchedAt, latest.Generation);
+        var trend = IndicatorTrendProjector.Build(indicator.Code, GetEvidencePages(), months);
+        return new IndicatorResult(indicator, latest.SourceUrl, latest.FetchedAt, latest.Generation, trend);
     }
 
     public async Task<PageListResult> ListPagesAsync(CancellationToken cancellationToken)
@@ -153,6 +159,25 @@ public sealed class MceIndexService(MceIndexStore store, RefreshCoordinator refr
         return new RefreshResult(report, refreshCoordinator.GetStatus());
     }
 
+
+    private Dictionary<string, StoredPage> GetEvidencePages()
+    {
+        var pages = new Dictionary<string, StoredPage>(StringComparer.Ordinal);
+        foreach (var slug in new[]
+        {
+            "LI_Monthly",
+            "Meaningful_Retail",
+            "Meaningful_CPI_PPI",
+            "Meaningful_TSF",
+        })
+        {
+            if (store.FindPage(slug) is { } page)
+            {
+                pages.Add(slug, page);
+            }
+        }
+        return pages;
+    }
 
     private async Task EnsureAvailableAsync(CancellationToken cancellationToken)
     {

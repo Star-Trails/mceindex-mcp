@@ -35,7 +35,7 @@ public sealed class StdioIntegrationTests
             await using var client = await McpClient.CreateAsync(transport, cancellationToken: cancellationToken);
             Assert.Equal("MCEIndex", client.ServerInfo.Title);
             Assert.Equal("mceindex-mcp", client.ServerInfo.Name);
-            Assert.Equal("3.8.1", client.ServerInfo.Version);
+            Assert.Equal("3.9.0", client.ServerInfo.Version);
 
             var tools = await client.ListToolsAsync(cancellationToken: cancellationToken);
             Assert.Equal(
@@ -53,7 +53,7 @@ public sealed class StdioIntegrationTests
             Assert.NotNull(discovery.StructuredContent);
             var discoveryRoot = discovery.StructuredContent.Value;
             Assert.Equal(
-                "当前索引包含 1 个主题、2 个结构化读数和 2 个页面。",
+                "当前索引包含 1 个主题、2 个结构化读数和 2 个页面，并提供历史趋势及改善或恶化判断。",
                 discoveryRoot.GetProperty("summary").GetString());
             var topics = discoveryRoot.GetProperty("topics");
             Assert.Equal(1, topics.GetArrayLength());
@@ -66,6 +66,10 @@ public sealed class StdioIntegrationTests
                 topics[0].GetProperty("suggestedQuestion").GetString());
             Assert.Equal(2, topics[0].GetProperty("currentReadings").GetArrayLength());
             Assert.Equal("10.54%", topics[0].GetProperty("currentReadings")[0].GetProperty("displayValue").GetString());
+            var discoveryTrend = topics[0].GetProperty("trend");
+            Assert.Equal("rising", discoveryTrend.GetProperty("direction").GetString());
+            Assert.Equal("improving", discoveryTrend.GetProperty("assessment").GetString());
+            Assert.Equal(13, discoveryTrend.GetProperty("availablePeriods").GetInt32());
             Assert.Equal(2, discoveryRoot.GetProperty("pages").GetArrayLength());
             Assert.Equal(4, discoveryRoot.GetProperty("nextSteps").GetArrayLength());
 
@@ -87,6 +91,9 @@ public sealed class StdioIntegrationTests
             Assert.Equal("impossible", verification.GetProperty("reproductionStatus").GetString());
             Assert.True(verification.GetProperty("appliesToCurrentPeriod").GetBoolean());
             Assert.False(verification.GetProperty("dataUpdated").GetBoolean());
+            var latestTrend = atAGlance[0].GetProperty("trend");
+            Assert.Equal(1.54, latestTrend.GetProperty("yearOverYearChange").GetDouble(), 2);
+            Assert.Equal("improving", latestTrend.GetProperty("assessment").GetString());
             Assert.True(verification.GetProperty("sources").GetArrayLength() >= 2);
             var conceptualProvenance = verification.GetProperty("conceptualProvenance");
             Assert.Equal(
@@ -109,11 +116,16 @@ public sealed class StdioIntegrationTests
             var indicator = await client.CallToolAsync("get_indicator", new Dictionary<string, object?>
             {
                 ["indicator"] = "LEI-GDP",
+                ["months"] = 6,
             }, cancellationToken: cancellationToken);
             Assert.NotNull(indicator.StructuredContent);
             var indicatorText = indicator.Content.OfType<ModelContextProtocol.Protocol.TextContentBlock>().Single().Text;
             Assert.Contains("2026-06", indicatorText, StringComparison.Ordinal);
             Assert.Contains("产业规模占GDP比重", indicatorText, StringComparison.Ordinal);
+            var indicatorTrend = indicator.StructuredContent.Value.GetProperty("trend");
+            Assert.Equal(6, indicatorTrend.GetProperty("history").GetArrayLength());
+            Assert.Equal("2026-06", indicatorTrend.GetProperty("currentPeriod").GetString());
+            Assert.Equal(0.44, indicatorTrend.GetProperty("monthOverMonthChange").GetDouble(), 2);
 
             var charts = await client.CallToolAsync("get_page", new Dictionary<string, object?>
             {
@@ -212,6 +224,35 @@ public sealed class StdioIntegrationTests
                 new DataTable(
                     ["数据类别", "主要用途", "项目内落点", "口径说明"],
                     [["正式HS发布包", "提供总指标", "headline.csv", "不可变发布包"]]),
+            ],
+            Charts =
+            [
+                new ChartData(
+                    "产业规模占比 · 图表 1",
+                    "五大新产业规模占 GDP 历史",
+                    [],
+                    "月份",
+                    "占比",
+                    [
+                        new ChartSeries(
+                            "产业规模占GDP比重",
+                            "scatter",
+                            [
+                                new ChartPoint("2025-06", 9.00),
+                                new ChartPoint("2025-07", 9.10),
+                                new ChartPoint("2025-08", 9.20),
+                                new ChartPoint("2025-09", 9.30),
+                                new ChartPoint("2025-10", 9.40),
+                                new ChartPoint("2025-11", 9.50),
+                                new ChartPoint("2025-12", 9.60),
+                                new ChartPoint("2026-01", 9.70),
+                                new ChartPoint("2026-02", 9.80),
+                                new ChartPoint("2026-03", 9.90),
+                                new ChartPoint("2026-04", 10.00),
+                                new ChartPoint("2026-05", 10.10),
+                                new ChartPoint("2026-06", 10.54),
+                            ]),
+                    ]),
             ],
             Text =
             [

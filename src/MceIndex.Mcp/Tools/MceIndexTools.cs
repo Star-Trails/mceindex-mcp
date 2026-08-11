@@ -20,23 +20,24 @@ public sealed class MceIndexTools(MceIndexService service)
 
     [McpServerTool(Name = "discover_data", Title = "发现可查询的中国经济数据", ReadOnly = false,
         Destructive = false, Idempotent = true, OpenWorld = true, UseStructuredContent = true)]
-    [Description("数据发现入口。用户尚未指定指标、询问有哪些数据、提出宽泛的中国经济问题或需要选择分析方向时优先调用。返回六个主题、当前读数、指标意义、典型问题、页面目录和建议的后续工具。当前 MCP 服务进程的首次查询会先刷新数据，后续调用只读取本地 SQLite。")]
+    [Description("数据发现入口。用户尚未指定指标、询问有哪些数据、提出宽泛的中国经济问题或需要选择分析方向时优先调用。返回六个主题、当前读数、历史趋势、改善或恶化判断、指标意义、典型问题、页面目录和建议的后续工具。当前 MCP 服务进程的首次查询会先刷新数据，后续调用只读取本地 SQLite。")]
     public Task<DataDiscoveryResult> DiscoverDataAsync(CancellationToken cancellationToken) =>
         InvokeAsync(() => service.DiscoverAsync(cancellationToken));
 
     [McpServerTool(Name = "get_latest", Title = "获取最新中国经济指数", ReadOnly = false,
         Destructive = false, Idempotent = true, OpenWorld = true, UseStructuredContent = true)]
-    [Description("返回月度总览的六组结构化读数。verification 包含可信度、来源、算法、复现、公式和限制条件；数据期晚于审计期时继续返回上次审计记录，并标注 auditedPeriod、appliesToCurrentPeriod=false 和 dataUpdated=true。每组 notes 保留网站原始公式和方法文本。当前 MCP 服务进程的首次查询会先刷新数据，后续调用只读取本地 SQLite。")]
+    [Description("返回月度总览的六组结构化读数及最近 13 个月历史趋势。每组 trend 包含环比、同比、近 3 个月动量、方向、改善或恶化判断及判断依据；对 CPI 和社融等无法仅凭升降判断的指标明确返回 indeterminate。verification 包含可信度、来源、算法、复现、公式和限制条件。当前 MCP 服务进程的首次查询会先刷新数据，后续调用只读取本地 SQLite。")]
     public Task<LatestOverview> GetLatestAsync(CancellationToken cancellationToken) =>
         InvokeAsync(() => service.GetLatestAsync(cancellationToken));
 
     [McpServerTool(Name = "get_indicator", Title = "读取单项中国经济指标", ReadOnly = false,
         Destructive = false, Idempotent = true, OpenWorld = true, UseStructuredContent = true)]
-    [Description("按代码或中文名称读取指标。当前 MCP 服务进程的首次查询会先刷新数据，后续调用只读取本地 SQLite。代码：LEI-GDP、LEI-EMP、LEI-FIS、MRS、MCPI、MSF。")]
+    [Description("按代码或中文名称读取指标，并返回可调历史窗口、环比、同比、近 3 个月动量及改善或恶化判断。当前 MCP 服务进程的首次查询会先刷新数据，后续调用只读取本地 SQLite。代码：LEI-GDP、LEI-EMP、LEI-FIS、MRS、MCPI、MSF。")]
     public Task<IndicatorResult> GetIndicatorAsync(
         [Description("指标代码或完整中文名称，例如 LEI-GDP 或 有意义社融")] string indicator,
+        [Description("返回最近多少个月的历史序列，范围 2-120，默认 24")] int months = 24,
         CancellationToken cancellationToken = default) =>
-        InvokeAsync(() => service.GetIndicatorAsync(indicator, cancellationToken));
+        InvokeAsync(() => service.GetIndicatorAsync(indicator, months, cancellationToken));
 
     [McpServerTool(Name = "list_pages", Title = "浏览 MCEIndex 页面目录", ReadOnly = false,
         Destructive = false, Idempotent = true, OpenWorld = true, UseStructuredContent = true)]

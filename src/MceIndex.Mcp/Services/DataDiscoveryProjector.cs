@@ -45,11 +45,12 @@ internal static class DataDiscoveryProjector
                 section.Title,
                 readings,
                 "get_indicator",
-                section.Code);
+                section.Code,
+                section.Trend);
         }
 
         return new DataDiscoveryResult(
-            $"当前索引包含 {topics.Length} 个主题、{readingCount} 个结构化读数和 {pages.Length} 个页面。",
+            $"当前索引包含 {topics.Length} 个主题、{readingCount} 个结构化读数和 {pages.Length} 个页面，并提供历史趋势及改善或恶化判断。",
             latest.SourceUrl,
             latest.FetchedAt,
             latest.Generation,
@@ -57,8 +58,8 @@ internal static class DataDiscoveryProjector
             pages,
             [.. topics.Select(topic => topic.SuggestedQuestion)],
             [
-                new ToolRecommendation("查看六组完整读数、公式、来源和核验状态", "get_latest", null),
-                new ToolRecommendation("深入一个核心指标", "get_indicator", "indicator=LEI-GDP"),
+                new ToolRecommendation("查看六组完整读数、历史趋势、公式、来源和核验状态", "get_latest", null),
+                new ToolRecommendation("深入一个核心指标并调整历史窗口", "get_indicator", "indicator=LEI-GDP, months=24"),
                 new ToolRecommendation("读取某个栏目的正文、表格或图表", "get_page", "page=Monthly_Overview, view=charts"),
                 new ToolRecommendation("按关键词搜索全部栏目", "search_index", "query=新能源汽车"),
             ]);
