@@ -26,13 +26,13 @@ flowchart LR
 
 ## 安装
 
-### 1. 安装系统依赖
+### 1. 准备运行环境
 
-同一个 `MCEIndex.Mcp` 工具包可用于 Windows、Linux 和 macOS，不需要下载不同平台的 `.nupkg`。工具包不会重复打包以下系统组件，用户需要先自行安装：
+支持 Windows、Linux 和 macOS：
 
 | 依赖 | Windows | Linux | macOS |
 |---|---|---|---|
-| [.NET 10](https://dotnet.microsoft.com/download/dotnet/10.0) | SDK；仅运行现成包时 Runtime 即可 | SDK；仅运行现成包时 Runtime 即可 | SDK；仅运行现成包时 Runtime 即可 |
+| [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) | 必须 | 必须 | 必须 |
 | [Node.js 24 LTS](https://nodejs.org/) | 必须，确保 `node.exe` 位于 `PATH` | 必须，确保 `node` 位于 `PATH` | 必须，确保 `node` 位于 `PATH` |
 | SQLite 3 | Windows 10+ 自带 `winsqlite3.dll` | 安装提供 `libsqlite3.so.0` 的发行版运行库 | 系统自带 `libsqlite3.dylib` |
 | Chrome 或 Chromium | 安装任一种 | 安装任一种 | 安装任一种 |
@@ -46,9 +46,9 @@ node --version
 
 浏览器不在标准安装位置时，后续在 MCP 配置中设置 `MCEINDEX_BROWSER_EXECUTABLE`；Node.js 不在 MCP 客户端的 `PATH` 中时设置 `PLAYWRIGHT_NODEJS_PATH`。这两个变量在三个平台上都接受可执行文件的绝对路径。
 
-### 2. 生成并安装本地 `.nupkg`
+### 2. 构建并安装
 
-本项目不要求把包发布到在线包管理器。依赖准备完成后，在 Windows、Linux 或 macOS 的仓库目录执行相同的 .NET 命令：
+在仓库根目录运行：
 
 ```text
 dotnet restore
@@ -81,7 +81,7 @@ dotnet tool update --tool-path "<TOOL_PATH>" --add-source ./artifacts MCEIndex.M
 dotnet tool uninstall --tool-path "<TOOL_PATH>" MCEIndex.Mcp
 ```
 
-`.nupkg` 只保存在本地 `artifacts` 目录，不需要上传 NuGet.org。首次 `restore`/`pack` 仍需从已配置的依赖源取得第三方包；已经缓存依赖时可以离线构建。工具运行时复用第 1 步安装的 Node.js、SQLite 和 Chrome，不会在 `.nupkg` 中重复保存这些运行时。
+打包产物位于 `artifacts/MCEIndex.Mcp.3.6.0.nupkg`。
 
 
 ### 开发运行
