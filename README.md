@@ -1,102 +1,80 @@
 # MCEIndex MCP
 
-面向 [有意义中国经济指数（mceindex.com）](https://mceindex.com/) 的本地索引 MCP 服务。服务使用 Playwright 与浏览器 stealth 补丁渲染公开 Streamlit 页面，将指标卡、统计期、解释文本和 Plotly 图表序列结构化写入 SQLite，并通过标准输入输出暴露类型化 MCP 工具。
+面向 [有意义中国经济指数（mceindex.com）](https://mceindex.com/) 的本地索引 MCP 服务。它将公开页面中的指标卡、统计期、解释文本和 Plotly 图表写入 SQLite，并通过 stdio 提供结构化查询。
 
-这不是 mceindex.com 的官方 API，也不绕过访问控制。数据以页面实际公开内容和最近一次成功抓取为准；回答经济问题时应保留结果中的 `sourceUrl` 与 `fetchedAt`。
+MCEIndex MCP 是独立项目，抓取范围限于公开页面并遵守站点访问控制。查询结果包含 `sourceUrl` 和 `fetchedAt`，便于核对来源与抓取时间。
 
-## 设计
+## 功能
 
-```mermaid
-flowchart LR
-  A[MCP 客户端] <-->|stdio / JSON-RPC| B[mceindex-mcp]
-  B --> C[查询服务]
-  C --> D[(SQLite + FTS5 trigram)]
-  B --> E[刷新协调器]
-  E --> F[Playwright Stealth / Chrome]
-  F --> G[mceindex.com Streamlit 页面]
-  E --> D
-```
+- 读取月度总览和单项经济指标
+- 按栏目读取正文、表格和图表
+- 使用 SQLite FTS5 trigram 搜索中文内容与指标代码
+- 将抓取结果保存在本地，支持离线查询
+- 通过 MCP JSON Schema 返回结构化数据
 
-- 首个查询会刷新一次索引；同一 MCP 进程内的后续查询只读本地 SQLite。
-- 刷新失败但本地已有数据时返回旧索引；空库返回 `INDEX_EMPTY`。
-- `refresh_index` 用于显式更新，支持 24 小时刷新间隔和 60 秒硬冷却。
-- SQLite FTS5 trigram 支持中文子串、指标代码和内容类型过滤。
-- 页面、指标卡、表格和 Plotly 图表均以结构化数据保存并通过 MCP JSON Schema 返回。
-- 单页失败不会删除上次成功内容；每次刷新结束后关闭浏览器。
-
-## 安装
+## 快速开始
 
 ### 1. 准备运行环境
 
-支持 Windows、Linux 和 macOS：
+| 依赖 | 要求 |
+|---|---|
+| [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) | 构建和安装 |
+| [Node.js 24 LTS](https://nodejs.org/) | `node` 或 `node.exe` 位于 `PATH` |
+| SQLite 3 | 提供系统 SQLite 动态库 |
+| Chrome 或 Chromium | 渲染 Streamlit 页面 |
 
-| 依赖 | Windows | Linux | macOS |
-|---|---|---|---|
-| [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) | 必须 | 必须 | 必须 |
-| [Node.js 24 LTS](https://nodejs.org/) | 必须，确保 `node.exe` 位于 `PATH` | 必须，确保 `node` 位于 `PATH` | 必须，确保 `node` 位于 `PATH` |
-| SQLite 3 | Windows 10+ 自带 `winsqlite3.dll` | 安装提供 `libsqlite3.so.0` 的发行版运行库 | 系统自带 `libsqlite3.dylib` |
-| Chrome 或 Chromium | 安装任一种 | 安装任一种 | 安装任一种 |
+Windows 10+ 提供 `winsqlite3.dll`，macOS 提供 `libsqlite3.dylib`。Debian 和 Ubuntu 可安装 `libsqlite3-0`：
 
-请通过各平台的官方安装程序或系统包管理器安装上述依赖。安装后，所有平台都先确认 .NET 和 Node.js 可用：
+```bash
+sudo apt-get update
+sudo apt-get install -y libsqlite3-0 chromium
+```
+
+检查 .NET 和 Node.js：
 
 ```text
 dotnet --version
 node --version
 ```
 
-浏览器不在标准安装位置时，后续在 MCP 配置中设置 `MCEINDEX_BROWSER_EXECUTABLE`；Node.js 不在 MCP 客户端的 `PATH` 中时设置 `PLAYWRIGHT_NODEJS_PATH`。这两个变量在三个平台上都接受可执行文件的绝对路径。
-
-### 2. 构建并安装
-
-在仓库根目录运行：
+### 2. 构建
 
 ```text
+git clone https://github.com/Star-Trails/mceindex-mcp.git
+cd mceindex-mcp
 dotnet restore
 dotnet pack src/MceIndex.Mcp/MceIndex.Mcp.csproj -c Release -o artifacts
-dotnet tool install --tool-path "<TOOL_PATH>" --add-source ./artifacts MCEIndex.Mcp --version 3.6.0
 ```
 
-执行前将 `<TOOL_PATH>` 替换为希望保存工具的绝对目录，例如：
+打包产物位于 `artifacts/MCEIndex.Mcp.3.6.0.nupkg`。
 
-| 平台 | `<TOOL_PATH>` 示例 | 安装后的 `command` |
+### 3. 安装
+
+将 `<TOOL_PATH>` 替换为工具安装目录：
+
+```text
+dotnet tool install --tool-path "<TOOL_PATH>" --add-source ./artifacts MCEIndex.Mcp --version 3.6.0
+dotnet tool list --tool-path "<TOOL_PATH>"
+```
+
+| 平台 | `<TOOL_PATH>` 示例 | MCP `command` |
 |---|---|---|
 | Windows | `C:\Users\USER\AppData\Local\mceindex-mcp` | `C:\Users\USER\AppData\Local\mceindex-mcp\mceindex-mcp.exe` |
 | Linux | `/home/USER/.local/share/mceindex-mcp` | `/home/USER/.local/share/mceindex-mcp/mceindex-mcp` |
 | macOS | `/Users/USER/.local/share/mceindex-mcp` | `/Users/USER/.local/share/mceindex-mcp/mceindex-mcp` |
 
-该命令不依赖 shell 续行语法，可直接用于 PowerShell、CMD、bash 和 zsh。
+安装成功后，`dotnet tool list` 显示 `mceindex.mcp 3.6.0`。
 
-### 3. 验证安装
-
-```text
-dotnet tool list --tool-path "<TOOL_PATH>"
-```
-
-输出应包含 `mceindex.mcp 3.6.0`。MCP 客户端的 `command` 使用上表中的绝对可执行文件路径。
-
-### 更新或卸载
+### 更新与卸载
 
 ```text
 dotnet tool update --tool-path "<TOOL_PATH>" --add-source ./artifacts MCEIndex.Mcp --version 3.6.0 --no-cache
 dotnet tool uninstall --tool-path "<TOOL_PATH>" MCEIndex.Mcp
 ```
 
-打包产物位于 `artifacts/MCEIndex.Mcp.3.6.0.nupkg`。
+## 配置 MCP 客户端
 
-
-### 开发运行
-
-开发时无需全局安装：
-
-```bash
-dotnet run --project src/MceIndex.Mcp/MceIndex.Mcp.csproj
-```
-
-进程通过 stdio 传输 MCP JSON-RPC；stdout 专用于协议，运行日志写入 stderr。
-
-## MCP 客户端配置
-
-从本地 `.nupkg` 安装后，Claude Desktop 等客户端将 `command` 设置为安装步骤表格中的绝对路径：
+`command` 使用安装后的绝对路径：
 
 ```json
 {
@@ -108,7 +86,7 @@ dotnet run --project src/MceIndex.Mcp/MceIndex.Mcp.csproj
 }
 ```
 
-Codex 配置使用同一个绝对路径：
+Codex 使用以下配置：
 
 ```toml
 [mcp_servers.mceindex]
@@ -117,18 +95,14 @@ startup_timeout_sec = 60
 tool_timeout_sec = 180
 ```
 
-Node.js 已在客户端 `PATH` 中、Chrome 位于标准安装位置时，不需要额外环境变量。自动探测失败时再添加：
+服务从客户端的 `PATH` 查找 Node.js，并从标准安装目录查找 Chrome 或 Chromium。自定义路径使用以下环境变量：
 
 ```text
 PLAYWRIGHT_NODEJS_PATH=<Node.js 可执行文件绝对路径>
 MCEINDEX_BROWSER_EXECUTABLE=<Chrome 或 Chromium 可执行文件绝对路径>
 ```
 
-Windows 使用 `node.exe`、`chrome.exe` 路径；Linux 和 macOS 使用对应的 `node`、Chrome 或 Chromium 可执行文件路径。
-
 ## 工具
-
-同一 MCP 进程的首个查询会刷新索引，后续查询只读本地数据。
 
 | 工具 | 用途 | 主要参数 |
 |---|---|---|
@@ -137,24 +111,33 @@ Windows 使用 `node.exe`、`chrome.exe` 路径；Linux 和 macOS 使用对应�
 | `list_pages` | 列出已索引栏目和刷新状态 | 无 |
 | `get_page` | 读取栏目摘要、正文、表格或图表 | `page`、`view`、`offset`、`limit` |
 | `search_index` | 搜索中文内容或指标代码 | `query`、`page`、`kind`、`mode`、`offset`、`limit` |
-| `refresh_index` | 手动刷新全部栏目 | `force=false` |
+| `refresh_index` | 刷新全部栏目 | `force=false` |
 
-`get_latest` 的读数包含网站值、统计期、来源和可选核验信息。`get_page` 与 `search_index` 使用 `offset`/`limit` 分页。
+`get_latest` 的读数包含网站值、统计期、来源和核验信息。`get_page` 与 `search_index` 使用 `offset` 和 `limit` 分页。
 
-`refresh_index(force=false)` 遵守 24 小时间隔；`force=true` 可绕过该间隔，但不能绕过 60 秒硬冷却。结果为 `completed`、`partial` 或 `skipped`。
+## 数据更新
 
-## 配置
+- 当前 MCP 进程的首个查询会刷新索引，并在刷新完成后读取 SQLite。
+- 后续查询直接读取本地索引。
+- 首次刷新失败且本地已有数据时，查询返回最近一次成功结果；空库返回 `INDEX_EMPTY`。
+- `refresh_index(force=false)` 遵守 24 小时刷新间隔。
+- `refresh_index(force=true)` 忽略 24 小时间隔，仍执行 60 秒硬冷却。
+- 单页抓取失败时保留该页最近一次成功内容。
+
+`refresh_index` 返回 `completed`、`partial` 或 `skipped`。
+
+## 环境变量
 
 | 环境变量 | 默认值 | 用途 |
 |---|---|---|
-| `MCEINDEX_BASE_URL` | `https://mceindex.com/` | 数据源地址；HTTP 只允许本机测试 |
+| `MCEINDEX_BASE_URL` | `https://mceindex.com/` | 数据源地址；HTTP 仅用于本机测试 |
 | `MCEINDEX_DB_PATH` | 平台缓存目录下的 `mceindex_mcp/mceindex.db` | SQLite 索引路径 |
-| `MCEINDEX_BROWSER_EXECUTABLE` | 自动探测 | Chrome/Chromium 绝对路径 |
+| `MCEINDEX_BROWSER_EXECUTABLE` | 自动探测 | Chrome 或 Chromium 绝对路径 |
 | `PLAYWRIGHT_NODEJS_PATH` | 从 `PATH` 探测 | Node.js 绝对路径 |
-| `MCEINDEX_BROWSER_USER_AGENT` | 内置 Chrome UA | 自定义浏览器 User-Agent |
-| `MCEINDEX_BROWSER_PROFILE` | 空 | 可选持久化浏览器 profile |
-| `MCEINDEX_CF_CLEARANCE` | 空 | 可选的合法 `cf_clearance` Cookie |
-| `MCEINDEX_HEADLESS` | `true` | 是否无头运行 |
+| `MCEINDEX_BROWSER_USER_AGENT` | 内置 Chrome UA | 浏览器 User-Agent |
+| `MCEINDEX_BROWSER_PROFILE` | 空 | 持久化浏览器 profile |
+| `MCEINDEX_CF_CLEARANCE` | 空 | 合法取得的 `cf_clearance` Cookie |
+| `MCEINDEX_HEADLESS` | `true` | 无头模式开关 |
 | `MCEINDEX_TIMEOUT_MS` | `45000` | 单页超时 |
 | `MCEINDEX_SETTLE_MS` | `1200` | DOM 稳定等待时间 |
 | `MCEINDEX_REFRESH_INTERVAL_MS` | `86400000` | 普通刷新间隔 |
@@ -162,13 +145,17 @@ Windows 使用 `node.exe`、`chrome.exe` 路径；Linux 和 macOS 使用对应�
 | `MCEINDEX_CRAWL_CONCURRENCY` | `1` | 抓取并发，范围 1–4 |
 | `MCEINDEX_MAX_PAGES` | `20` | 单次刷新页面上限，范围 5–100 |
 
-Cloudflare 验证失败返回 `ACCESS_CHALLENGE`。其他稳定错误码包括 `BROWSER_NOT_FOUND`、`LOAD_TIMEOUT`、`PAGE_NOT_FOUND`、`INDICATOR_NOT_FOUND`、`INDEX_EMPTY`、`INVALID_CONFIGURATION`、`EXTRACTION_FAILED`、`DATABASE_ERROR` 和 `INTERNAL_ERROR`。
+Cloudflare 验证失败返回 `ACCESS_CHALLENGE`。其他错误码包括 `BROWSER_NOT_FOUND`、`LOAD_TIMEOUT`、`PAGE_NOT_FOUND`、`INDICATOR_NOT_FOUND`、`INDEX_EMPTY`、`INVALID_CONFIGURATION`、`EXTRACTION_FAILED`、`DATABASE_ERROR` 和 `INTERNAL_ERROR`。
 
-## 数据库
+## 开发
 
-SQLite schema v4 保存页面、指标卡、内容、FTS 索引和刷新状态。旧版 v2/v3 数据库会在启动时原地迁移；启动迁移本身不访问网络。
+直接运行：
 
-## 开发与验证
+```bash
+dotnet run --project src/MceIndex.Mcp/MceIndex.Mcp.csproj
+```
+
+构建与测试：
 
 ```bash
 dotnet restore
@@ -176,4 +163,5 @@ dotnet build MceIndex.slnx --no-restore
 dotnet test MceIndex.slnx --no-restore
 dotnet pack src/MceIndex.Mcp/MceIndex.Mcp.csproj -c Release --no-restore -o artifacts
 ```
-浏览器集成测试需要设置 `MCEINDEX_TEST_BROWSER`，其余测试不依赖外部浏览器。
+
+进程通过 stdio 传输 MCP JSON-RPC。stdout 专用于协议，stderr 输出运行日志。设置 `MCEINDEX_TEST_BROWSER` 可运行浏览器集成测试。
