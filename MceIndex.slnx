@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MceIndex.Mcp/MceIndex.Mcp.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MceIndex.Mcp.Tests/MceIndex.Mcp.Tests.csproj" />
+  </Folder>
+</Solution>

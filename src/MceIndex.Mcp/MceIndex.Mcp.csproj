@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>mceindex-mcp</AssemblyName>
+    <RootNamespace>MceIndex.Mcp</RootNamespace>
+    <Version>3.6.0</Version>
+    <Description>Local indexed MCP server for MCEIndex (Meaningful China Economic Index)</Description>
+    <Authors>MCEIndex MCP contributors</Authors>
+    <PackageId>MCEIndex.Mcp</PackageId>
+    <PackageTags>mcp;mceindex;china-economy;streamlit;playwright;stealth</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>mceindex-mcp</ToolCommandName>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="AngleSharp" />
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Playwright" />
+    <PackageReference Include="ManagedCode.Playwright.Stealth" />
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="SQLitePCLRaw.provider.dynamic_cdecl" />
+    <PackageReference Include="SQLitePCLRaw.provider.winsqlite3" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="MceIndex.Mcp.Tests" />
+  </ItemGroup>
+  <Target Name="ExcludeBundledNodeFromToolPackage" AfterTargets="PackTool">
+    <ItemGroup>
+      <TfmSpecificPackageFile Remove="$(PublishDir)playwright.ps1;$(PublishDir).playwright/**/*.ps1;$(PublishDir).playwright/node/**/*" />
+    </ItemGroup>
+  </Target>
+</Project>
