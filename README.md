@@ -19,7 +19,7 @@ MCEIndex MCP 是独立项目，抓取范围限于公开页面并遵守站点访�
 
 | 依赖 | 要求 |
 |---|---|
-| [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) | 构建和安装 |
+| [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) | 运行 `dnx` 或安装 .NET Tool |
 | [Node.js 24 LTS](https://nodejs.org/) | `node` 或 `node.exe` 位于 `PATH` |
 | SQLite 3 | 提供系统 SQLite 动态库 |
 | Chrome 或 Chromium | 渲染 Streamlit 页面 |
@@ -38,63 +38,62 @@ dotnet --version
 node --version
 ```
 
-### 2. 构建
+### 2. 一次性运行
 
-```text
-git clone https://github.com/Star-Trails/mceindex-mcp.git
-cd mceindex-mcp
-dotnet restore
-dotnet pack src/MceIndex.Mcp/MceIndex.Mcp.csproj -c Release -o artifacts
+.NET 10 的 `dnx` 会从 NuGet 下载、缓存并启动工具：
+
+```bash
+dnx MCEIndex.Mcp@3.8.1
 ```
 
-打包产物位于 `artifacts/MCEIndex.Mcp.3.8.0.nupkg`。
+### 3. 全局安装
 
-### 3. 安装
-
-将 `<TOOL_PATH>` 替换为工具安装目录：
-
-```text
-dotnet tool install --tool-path "<TOOL_PATH>" --add-source ./artifacts MCEIndex.Mcp --version 3.8.0
-dotnet tool list --tool-path "<TOOL_PATH>"
+```bash
+dotnet tool install --global MCEIndex.Mcp --version 3.8.1
+dotnet tool list --global
 ```
 
-| 平台 | `<TOOL_PATH>` 示例 | MCP `command` |
-|---|---|---|
-| Windows | `C:\Users\USER\AppData\Local\mceindex-mcp` | `C:\Users\USER\AppData\Local\mceindex-mcp\mceindex-mcp.exe` |
-| Linux | `/home/USER/.local/share/mceindex-mcp` | `/home/USER/.local/share/mceindex-mcp/mceindex-mcp` |
-| macOS | `/Users/USER/.local/share/mceindex-mcp` | `/Users/USER/.local/share/mceindex-mcp/mceindex-mcp` |
+更新或卸载：
 
-安装成功后，`dotnet tool list` 显示 `mceindex.mcp 3.8.0`。
-
-### 更新与卸载
-
-```text
-dotnet tool update --tool-path "<TOOL_PATH>" --add-source ./artifacts MCEIndex.Mcp --version 3.8.0 --no-cache
-dotnet tool uninstall --tool-path "<TOOL_PATH>" MCEIndex.Mcp
+```bash
+dotnet tool update --global MCEIndex.Mcp --version 3.8.1
+dotnet tool uninstall --global MCEIndex.Mcp
 ```
+
+全局工具的默认路径：
+
+| 平台 | `command` |
+|---|---|
+| Windows | `%USERPROFILE%\.dotnet\tools\mceindex-mcp.exe` |
+| Linux | `$HOME/.dotnet/tools/mceindex-mcp` |
+| macOS | `$HOME/.dotnet/tools/mceindex-mcp` |
 
 ## 配置 MCP 客户端
 
-`command` 使用安装后的绝对路径：
+MCP 客户端可以通过 `dnx` 直接启动：
 
 ```json
 {
   "mcpServers": {
     "mceindex": {
-      "command": "ABSOLUTE_PATH_TO_MCEINDEX_MCP"
+      "command": "dnx",
+      "args": ["MCEIndex.Mcp@3.8.1"]
     }
   }
 }
 ```
 
-Codex 使用以下配置：
+Codex 使用相同的启动方式：
 
 ```toml
 [mcp_servers.mceindex]
-command = "ABSOLUTE_PATH_TO_MCEINDEX_MCP"
+command = "dnx"
+args = ["MCEIndex.Mcp@3.8.1"]
 startup_timeout_sec = 60
 tool_timeout_sec = 180
 ```
+
+全局安装时，`command` 使用上表中的绝对路径，并删除 `args`。
 
 服务从客户端的 `PATH` 查找 Node.js，并从标准安装目录查找 Chrome 或 Chromium。自定义路径使用以下环境变量：
 

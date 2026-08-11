@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using ModelContextProtocol.Client;
 using MceIndex.Mcp.Domain;
 using MceIndex.Mcp.Persistence;
+using MceIndex.Mcp.Services;
 
 namespace MceIndex.Mcp.Tests;
 
@@ -25,9 +26,8 @@ public sealed class StdioIntegrationTests
             var transport = new StdioClientTransport(new StdioClientTransportOptions
             {
                 Name = "mceindex-test",
-                Command = System.IO.Path.Combine(repositoryRoot, ".dotnet", "dotnet"),
-                Arguments = [System.IO.Path.Combine(repositoryRoot, "src", "MceIndex.Mcp", "bin", "Debug", "net10.0", "mceindex-mcp.dll")],
-                WorkingDirectory = repositoryRoot,
+                Command = FindDotnetHost(repositoryRoot),
+                Arguments = [typeof(MceIndexService).Assembly.Location],
                 InheritEnvironmentVariables = false,
                 EnvironmentVariables = environment,
             });
@@ -35,7 +35,7 @@ public sealed class StdioIntegrationTests
             await using var client = await McpClient.CreateAsync(transport, cancellationToken: cancellationToken);
             Assert.Equal("MCEIndex", client.ServerInfo.Title);
             Assert.Equal("mceindex-mcp", client.ServerInfo.Name);
-            Assert.Equal("3.8.0", client.ServerInfo.Version);
+            Assert.Equal("3.8.1", client.ServerInfo.Version);
 
             var tools = await client.ListToolsAsync(cancellationToken: cancellationToken);
             Assert.Equal(
@@ -148,6 +148,19 @@ public sealed class StdioIntegrationTests
             SqliteConnection.ClearAllPools();
             File.Delete(databasePath);
         }
+    }
+
+    private static string FindDotnetHost(string repositoryRoot)
+    {
+        var configuredHost = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
+        if (!string.IsNullOrWhiteSpace(configuredHost) && File.Exists(configuredHost))
+        {
+            return configuredHost;
+        }
+
+        var executableName = OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet";
+        var repositoryHost = System.IO.Path.Combine(repositoryRoot, ".dotnet", executableName);
+        return File.Exists(repositoryHost) ? repositoryHost : executableName;
     }
 
     private static void SeedDatabase(string path)
