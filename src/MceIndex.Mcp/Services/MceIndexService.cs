@@ -38,6 +38,12 @@ public sealed class MceIndexService(MceIndexStore store, RefreshCoordinator refr
             overview.Snapshot.Text.Where(value => value.Length >= 20).Take(12).ToArray());
     }
 
+    public async Task<DataDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken)
+    {
+        var latest = await GetLatestAsync(cancellationToken).ConfigureAwait(false);
+        return DataDiscoveryProjector.Build(latest, store.ListPages());
+    }
+
     public async Task<IndicatorResult> GetIndicatorAsync(string query, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(query) || query.Length > 100)

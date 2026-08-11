@@ -43,7 +43,7 @@ builder.Services
         Name = "mceindex-mcp",
         Title = "MCEIndex",
         Version = typeof(MceIndexTools).Assembly.GetName().Version?.ToString(3) ?? "unknown",
-        Description = "Local indexed MCP server for MCEIndex.",
+        Description = "Discover and query locally indexed MCEIndex data. Use discover_data for broad or exploratory questions.",
     })
     .WithStdioServerTransport()
     .WithTools<MceIndexTools>(toolJsonOptions);

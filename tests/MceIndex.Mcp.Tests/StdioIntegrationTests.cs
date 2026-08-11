@@ -35,16 +35,39 @@ public sealed class StdioIntegrationTests
             await using var client = await McpClient.CreateAsync(transport, cancellationToken: cancellationToken);
             Assert.Equal("MCEIndex", client.ServerInfo.Title);
             Assert.Equal("mceindex-mcp", client.ServerInfo.Name);
-            Assert.Equal("3.6.0", client.ServerInfo.Version);
+            Assert.Equal("3.7.0", client.ServerInfo.Version);
 
             var tools = await client.ListToolsAsync(cancellationToken: cancellationToken);
             Assert.Equal(
-                ["get_indicator", "get_latest", "get_page", "list_pages", "refresh_index", "search_index"],
+                ["discover_data", "get_indicator", "get_latest", "get_page", "list_pages", "refresh_index", "search_index"],
                 tools.Select(tool => tool.Name).Order(StringComparer.Ordinal).ToArray());
             Assert.All(tools, tool => Assert.NotNull(tool.ProtocolTool.OutputSchema));
             Assert.All(
                 tools.Where(tool => tool.Name != "refresh_index"),
                 tool => Assert.False(tool.ProtocolTool.Annotations?.ReadOnlyHint));
+
+            var discoverTool = tools.Single(tool => tool.Name == "discover_data");
+            Assert.Contains("优先调用", discoverTool.ProtocolTool.Description, StringComparison.Ordinal);
+
+            var discovery = await client.CallToolAsync("discover_data", cancellationToken: cancellationToken);
+            Assert.NotNull(discovery.StructuredContent);
+            var discoveryRoot = discovery.StructuredContent.Value;
+            Assert.Equal(
+                "当前索引包含 1 个主题、2 个结构化读数和 2 个页面。",
+                discoveryRoot.GetProperty("summary").GetString());
+            var topics = discoveryRoot.GetProperty("topics");
+            Assert.Equal(1, topics.GetArrayLength());
+            Assert.Equal("LEI-GDP", topics[0].GetProperty("code").GetString());
+            Assert.Equal(
+                "观察五大新产业在整体经济中的体量及历史位置。",
+                topics[0].GetProperty("whyItMatters").GetString());
+            Assert.Equal(
+                "新产业占经济多大？",
+                topics[0].GetProperty("suggestedQuestion").GetString());
+            Assert.Equal(2, topics[0].GetProperty("currentReadings").GetArrayLength());
+            Assert.Equal("10.54%", topics[0].GetProperty("currentReadings")[0].GetProperty("displayValue").GetString());
+            Assert.Equal(2, discoveryRoot.GetProperty("pages").GetArrayLength());
+            Assert.Equal(4, discoveryRoot.GetProperty("nextSteps").GetArrayLength());
 
             var latest = await client.CallToolAsync("get_latest", cancellationToken: cancellationToken);
             Assert.NotNull(latest.StructuredContent);

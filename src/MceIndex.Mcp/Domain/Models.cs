@@ -303,6 +303,38 @@ public sealed record SearchResult(
     bool HasMore,
     long Generation);
 
+public sealed record DiscoveryReading(
+    string Key,
+    string Label,
+    string DisplayValue,
+    string? Unit);
+
+public sealed record DiscoveryTopic(
+    string Code,
+    string Title,
+    string? Period,
+    string Meaning,
+    string WhyItMatters,
+    string SuggestedQuestion,
+    DiscoveryReading[] CurrentReadings,
+    string DetailTool,
+    string DetailArgument);
+
+public sealed record ToolRecommendation(
+    string Need,
+    string Tool,
+    string? Example);
+
+public sealed record DataDiscoveryResult(
+    string Summary,
+    string SourceUrl,
+    DateTimeOffset FetchedAt,
+    long Generation,
+    DiscoveryTopic[] Topics,
+    StoredPageSummary[] Pages,
+    string[] SuggestedQuestions,
+    ToolRecommendation[] NextSteps);
+
 public sealed record RefreshResult(CrawlReport Report, IndexStatus Status);
 
 public sealed record IndicatorResult(

@@ -6,6 +6,7 @@ MCEIndex MCP 是独立项目，抓取范围限于公开页面并遵守站点访�
 
 ## 功能
 
+- 主动展示可查询主题、当前读数、指标意义和典型问题
 - 读取月度总览和单项经济指标
 - 按栏目读取正文、表格和图表
 - 使用 SQLite FTS5 trigram 搜索中文内容与指标代码
@@ -46,14 +47,14 @@ dotnet restore
 dotnet pack src/MceIndex.Mcp/MceIndex.Mcp.csproj -c Release -o artifacts
 ```
 
-打包产物位于 `artifacts/MCEIndex.Mcp.3.6.0.nupkg`。
+打包产物位于 `artifacts/MCEIndex.Mcp.3.7.0.nupkg`。
 
 ### 3. 安装
 
 将 `<TOOL_PATH>` 替换为工具安装目录：
 
 ```text
-dotnet tool install --tool-path "<TOOL_PATH>" --add-source ./artifacts MCEIndex.Mcp --version 3.6.0
+dotnet tool install --tool-path "<TOOL_PATH>" --add-source ./artifacts MCEIndex.Mcp --version 3.7.0
 dotnet tool list --tool-path "<TOOL_PATH>"
 ```
 
@@ -63,12 +64,12 @@ dotnet tool list --tool-path "<TOOL_PATH>"
 | Linux | `/home/USER/.local/share/mceindex-mcp` | `/home/USER/.local/share/mceindex-mcp/mceindex-mcp` |
 | macOS | `/Users/USER/.local/share/mceindex-mcp` | `/Users/USER/.local/share/mceindex-mcp/mceindex-mcp` |
 
-安装成功后，`dotnet tool list` 显示 `mceindex.mcp 3.6.0`。
+安装成功后，`dotnet tool list` 显示 `mceindex.mcp 3.7.0`。
 
 ### 更新与卸载
 
 ```text
-dotnet tool update --tool-path "<TOOL_PATH>" --add-source ./artifacts MCEIndex.Mcp --version 3.6.0 --no-cache
+dotnet tool update --tool-path "<TOOL_PATH>" --add-source ./artifacts MCEIndex.Mcp --version 3.7.0 --no-cache
 dotnet tool uninstall --tool-path "<TOOL_PATH>" MCEIndex.Mcp
 ```
 
@@ -106,6 +107,7 @@ MCEINDEX_BROWSER_EXECUTABLE=<Chrome 或 Chromium 可执行文件绝对路径>
 
 | 工具 | 用途 | 主要参数 |
 |---|---|---|
+| `discover_data` | 发现可查询主题、当前读数、指标意义和典型问题 | 无 |
 | `get_latest` | 返回月度总览的六组最新读数 | 无 |
 | `get_indicator` | 按代码或中文名称读取指标 | `indicator` |
 | `list_pages` | 列出已索引栏目和刷新状态 | 无 |
@@ -114,6 +116,8 @@ MCEINDEX_BROWSER_EXECUTABLE=<Chrome 或 Chromium 可执行文件绝对路径>
 | `refresh_index` | 刷新全部栏目 | `force=false` |
 
 `get_latest` 的读数包含网站值、统计期、来源和核验信息。`get_page` 与 `search_index` 使用 `offset` 和 `limit` 分页。
+
+`discover_data` 汇总六个主题、当前读数、指标意义、典型问题、页面目录和后续查询建议，适合在指标名称未知或问题范围较宽时使用。
 
 ## 数据更新
 
