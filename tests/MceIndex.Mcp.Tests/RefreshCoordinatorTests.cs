@@ -116,11 +116,11 @@ public sealed class RefreshCoordinatorTests
     {
         BaseUri = new Uri("http://127.0.0.1:3000/"),
         DatabasePath = ":memory:",
-        BrowserUserAgent = MceIndexOptions.DefaultBrowserUserAgent,
-        Headless = true,
+        CamofoxUri = MceIndexOptions.DefaultCamofoxUri,
         RequestTimeout = TimeSpan.FromSeconds(5),
         DomQuietPeriod = TimeSpan.FromMilliseconds(100),
         RefreshInterval = TimeSpan.FromHours(6),
+        CrawlDelay = TimeSpan.Zero,
         CrawlConcurrency = 2,
         MaxPages = 20,
     };

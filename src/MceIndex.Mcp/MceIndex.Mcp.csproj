@@ -3,13 +3,13 @@
     <OutputType>Exe</OutputType>
     <AssemblyName>mceindex-mcp</AssemblyName>
     <RootNamespace>MceIndex.Mcp</RootNamespace>
-    <Version>3.9.0</Version>
+    <Version>4.0.0</Version>
     <Title>MCEIndex MCP</Title>
     <Description>Local indexed MCP server for MCEIndex (Meaningful China Economic Index)</Description>
     <Authors>MCEIndex MCP contributors</Authors>
     <Copyright>Copyright © 2026 MCEIndex MCP contributors</Copyright>
     <PackageId>MCEIndex.Mcp</PackageId>
-    <PackageTags>mcp;mceindex;china-economy;streamlit;playwright;stealth</PackageTags>
+    <PackageTags>mcp;mceindex;china-economy;streamlit;camoufox;camofox</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/Star-Trails/mceindex-mcp</PackageProjectUrl>
@@ -24,8 +24,6 @@
     <PackageReference Include="AngleSharp" />
     <PackageReference Include="Microsoft.Data.Sqlite.Core" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
-    <PackageReference Include="Microsoft.Playwright" />
-    <PackageReference Include="ManagedCode.Playwright.Stealth" />
     <PackageReference Include="ModelContextProtocol" />
     <PackageReference Include="SQLitePCLRaw.provider.dynamic_cdecl" />
     <PackageReference Include="SQLitePCLRaw.provider.winsqlite3" />
@@ -36,9 +34,4 @@
   <ItemGroup>
     <InternalsVisibleTo Include="MceIndex.Mcp.Tests" />
   </ItemGroup>
-  <Target Name="ExcludeBundledNodeFromToolPackage" AfterTargets="PackTool">
-    <ItemGroup>
-      <TfmSpecificPackageFile Remove="$(PublishDir)playwright.ps1;$(PublishDir).playwright/**/*.ps1;$(PublishDir).playwright/node/**/*" />
-    </ItemGroup>
-  </Target>
 </Project>

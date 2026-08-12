@@ -1,7 +1,4 @@
-using ManagedCode.Playwright.Stealth;
 using System.Text.Json;
-using Microsoft.Extensions.Logging;
-using Microsoft.Playwright;
 using MceIndex.Mcp.Configuration;
 using MceIndex.Mcp.Domain;
 using MceIndex.Mcp.Parsing;
@@ -15,11 +12,11 @@ public interface IMceIndexCrawler : IAsyncDisposable
     Task CloseBrowserAsync();
 }
 
-public sealed partial class MceIndexCrawler(
+public sealed class MceIndexCrawler(
     MceIndexOptions options,
     MceIndexParser parser,
     TimeProvider timeProvider,
-    ILogger<MceIndexCrawler> logger) : IMceIndexCrawler
+    CamofoxClient camofox) : IMceIndexCrawler
 {
     private const int MaxCharts = 32;
     private const int MaxTotalChartPoints = 100_000;
@@ -36,170 +33,61 @@ public sealed partial class MceIndexCrawler(
             ["/Meaningful_TSF"] = (2, 2, 144),
             ["/Meaningful_Retail"] = (2, 2, 256),
         };
-    private readonly SemaphoreSlim browserGate = new(1, 1);
     private readonly SemaphoreSlim requestGate = new(1, 1);
     private DateTimeOffset nextRequestAt;
-    private IPlaywright? playwright;
-    private IBrowser? browser;
-    private IBrowserContext? context;
     private bool disposed;
 
     public async Task<CrawledPage> CrawlAsync(Uri target, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
+        await WaitForRequestSlotAsync(cancellationToken).ConfigureAwait(false);
+        var tab = await camofox.OpenTabAsync(target, cancellationToken).ConfigureAwait(false);
         try
         {
-            var browserContext = await EnsureContextAsync(cancellationToken).ConfigureAwait(false);
-            await using var page = await browserContext.NewPageAsync().ConfigureAwait(false);
-            page.SetDefaultTimeout((float)options.RequestTimeout.TotalMilliseconds);
-            page.SetDefaultNavigationTimeout((float)options.RequestTimeout.TotalMilliseconds);
-
-            await WaitForRequestSlotAsync(cancellationToken).ConfigureAwait(false);
-            await page.GotoAsync(target.AbsoluteUri, new PageGotoOptions
-            {
-                WaitUntil = WaitUntilState.DOMContentLoaded,
-                Timeout = (float)options.RequestTimeout.TotalMilliseconds,
-            }).ConfigureAwait(false);
-            try
-            {
-                await page.WaitForSelectorAsync("[data-testid='stMain'], main", new PageWaitForSelectorOptions
-                {
-                    State = WaitForSelectorState.Attached,
-                    Timeout = (float)options.RequestTimeout.TotalMilliseconds,
-                }).ConfigureAwait(false);
-                await page.WaitForFunctionAsync(
-                    "() => document.querySelector(\"[data-testid='stMain'], main\")?.querySelector(\"h1\")?.innerText.trim().length > 0",
-                    null,
-                    new PageWaitForFunctionOptions
-                    {
-                        Timeout = (float)options.RequestTimeout.TotalMilliseconds,
-                    }).ConfigureAwait(false);
-            }
-            catch (TimeoutException)
-            {
-                await AssertNoChallengeAsync(page).ConfigureAwait(false);
-                throw;
-            }
-            await WaitForDomQuietAsync(page).ConfigureAwait(false);
-            await AssertNoChallengeAsync(page).ConfigureAwait(false);
-            await WaitForExpectedInitialChartsAsync(page, target).ConfigureAwait(false);
+            await WaitForReadyAsync(tab, target, cancellationToken).ConfigureAwait(false);
+            await AssertNoChallengeAsync(tab, cancellationToken).ConfigureAwait(false);
 
             var documents = new List<string>(MceIndexParser.MaxHtmlDocuments);
-            var mainDocument = await page.ContentAsync().ConfigureAwait(false);
-            var totalDocumentCharacters = MceIndexParser.IncludeDocument(mainDocument, 0);
-            documents.Add(mainDocument);
-            foreach (var frame in page.Frames)
+            var totalDocumentCharacters = await CaptureDocumentsAsync(
+                tab, documents, 0, cancellationToken).ConfigureAwait(false);
+            var charts = await ExtractChartsAsync(tab, cancellationToken).ConfigureAwait(false);
+            if (await SelectAllHistoryAsync(tab, cancellationToken).ConfigureAwait(false))
             {
-                if (ReferenceEquals(frame, page.MainFrame))
-                {
-                    continue;
-                }
-                if (documents.Count >= MceIndexParser.MaxHtmlDocuments)
-                {
-                    throw new MceIndexException(
-                        MceIndexErrorCode.ExtractionFailed,
-                        $"MCEIndex returned more than {MceIndexParser.MaxHtmlDocuments} HTML documents.");
-                }
-
-                try
-                {
-                    var frameDocument = await frame.ContentAsync().ConfigureAwait(false);
-                    totalDocumentCharacters = MceIndexParser.IncludeDocument(
-                        frameDocument,
-                        totalDocumentCharacters);
-                    documents.Add(frameDocument);
-                }
-                catch (PlaywrightException error)
-                {
-                    LogInaccessibleFrame(logger, error, target);
-                }
+                totalDocumentCharacters = await CaptureDocumentsAsync(
+                    tab, documents, totalDocumentCharacters, cancellationToken).ConfigureAwait(false);
+                charts = MergeCharts(charts, await ExtractChartsAsync(tab, cancellationToken).ConfigureAwait(false));
             }
 
-            if (documents.Any(MceIndexParser.IsAccessChallenge))
-            {
-                throw new MceIndexException(MceIndexErrorCode.AccessChallenge,
-                    "Cloudflare verification blocked MCEIndex acquisition.");
-            }
-
-            var charts = await ExtractChartsAsync(page).ConfigureAwait(false);
-            if (await SelectAllHistoryAsync(page).ConfigureAwait(false))
-            {
-                var allHistoryDocument = await page.ContentAsync().ConfigureAwait(false);
-                totalDocumentCharacters = MceIndexParser.IncludeDocument(
-                    allHistoryDocument,
-                    totalDocumentCharacters);
-                documents.Add(allHistoryDocument);
-                charts = MergeCharts(charts, await ExtractChartsAsync(page).ConfigureAwait(false));
-            }
-
-            var source = Uri.TryCreate(page.Url, UriKind.Absolute, out var finalUri) ? finalUri : target;
+            var source = await GetSourceAsync(tab, target, cancellationToken).ConfigureAwait(false);
             if (source.AbsolutePath.TrimEnd('/').EndsWith("/LI_Monthly", StringComparison.OrdinalIgnoreCase))
             {
                 charts = await CaptureLifeIndexViewsAsync(
-                    page,
+                    tab,
                     documents,
                     totalDocumentCharacters,
-                    charts).ConfigureAwait(false);
+                    charts,
+                    cancellationToken).ConfigureAwait(false);
             }
             ValidateProductionChartCoverage(source, charts);
-            var snapshot = parser.Extract(documents, source, timeProvider.GetUtcNow()) with
-            {
-                Charts = charts,
-            };
+
+            var snapshot = parser.Extract(documents, source, timeProvider.GetUtcNow()) with { Charts = charts };
             if (snapshot.Headings.Length == 0 ||
-                (snapshot.Metrics.Length == 0 &&
-                 snapshot.Tables.Length == 0 &&
-                 snapshot.Cards.Length == 0 &&
-                 snapshot.Charts.Length == 0 &&
-                 snapshot.Text.Length == 0))
+                (snapshot.Metrics.Length == 0 && snapshot.Tables.Length == 0 &&
+                 snapshot.Cards.Length == 0 && snapshot.Charts.Length == 0 && snapshot.Text.Length == 0))
             {
-                throw new MceIndexException(MceIndexErrorCode.ExtractionFailed,
+                throw new MceIndexException(
+                    MceIndexErrorCode.ExtractionFailed,
                     $"MCEIndex returned no complete page content for {source}.");
             }
-
             return new CrawledPage(snapshot, [.. documents]);
-        }
-        catch (TimeoutException error)
-        {
-            throw new MceIndexException(MceIndexErrorCode.LoadTimeout,
-                $"MCEIndex did not become ready within {options.RequestTimeout.TotalMilliseconds:F0}ms.", innerException: error);
-        }
-        catch (PlaywrightException error) when (error.Message.Contains("Executable doesn't exist", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new MceIndexException(MceIndexErrorCode.BrowserNotFound,
-                "Playwright Chromium is not installed and MCEINDEX_BROWSER_EXECUTABLE did not resolve to a browser.", innerException: error);
-        }
-        catch (PlaywrightException error) when (error.Message.Contains("Driver not found", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new MceIndexException(MceIndexErrorCode.BrowserNotFound,
-                "Node.js was not found. Put node on PATH or set PLAYWRIGHT_NODEJS_PATH to its absolute path.",
-                innerException: error);
-        }
-    }
-
-    public async Task CloseBrowserAsync()
-    {
-        await browserGate.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            if (context is not null)
-            {
-                await context.CloseAsync().ConfigureAwait(false);
-                context = null;
-            }
-            if (browser is not null)
-            {
-                await browser.CloseAsync().ConfigureAwait(false);
-                browser = null;
-            }
-            playwright?.Dispose();
-            playwright = null;
         }
         finally
         {
-            browserGate.Release();
+            await camofox.CloseTabAsync(tab).ConfigureAwait(false);
         }
     }
+
+    public Task CloseBrowserAsync() => camofox.CloseBrowserAsync();
 
     public async ValueTask DisposeAsync()
     {
@@ -207,94 +95,9 @@ public sealed partial class MceIndexCrawler(
         {
             return;
         }
-
         disposed = true;
-        await CloseBrowserAsync().ConfigureAwait(false);
-        browserGate.Dispose();
+        await camofox.CloseBrowserAsync().ConfigureAwait(false);
         requestGate.Dispose();
-    }
-
-    private async Task<IBrowserContext> EnsureContextAsync(CancellationToken cancellationToken)
-    {
-        if (context is not null)
-        {
-            return context;
-        }
-
-        await browserGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            if (context is not null)
-            {
-                return context;
-            }
-
-            if (options.NodeExecutable is not null)
-            {
-                Environment.SetEnvironmentVariable("PLAYWRIGHT_NODEJS_PATH", options.NodeExecutable);
-            }
-
-            playwright ??= await Playwright.CreateAsync().ConfigureAwait(false);
-            var stealthConfig = new StealthConfig
-            {
-                NavigatorUserAgentValue = options.BrowserUserAgent,
-            };
-            var launchOptions = new BrowserTypeLaunchOptions
-            {
-                Headless = options.Headless,
-                ExecutablePath = options.BrowserExecutable,
-            };
-            if (options.BrowserProfile is not null)
-            {
-                context = await playwright.Chromium.LaunchPersistentContextAsync(
-                    options.BrowserProfile,
-                    new BrowserTypeLaunchPersistentContextOptions
-                    {
-                        Headless = launchOptions.Headless,
-                        ExecutablePath = launchOptions.ExecutablePath,
-                        UserAgent = options.BrowserUserAgent,
-                        Locale = "zh-CN",
-                        TimezoneId = "Asia/Shanghai",
-                    }).ConfigureAwait(false);
-                await context.ApplyStealthAsync(stealthConfig).ConfigureAwait(false);
-            }
-            else
-            {
-                var launched = await playwright.Chromium.LaunchStealthAsync(
-                    stealthConfig,
-                    launchOptions,
-                    new BrowserNewContextOptions
-                    {
-                        ViewportSize = new ViewportSize { Width = 1440, Height = 1000 },
-                        UserAgent = options.BrowserUserAgent,
-                        Locale = "zh-CN",
-                        TimezoneId = "Asia/Shanghai",
-                    }).ConfigureAwait(false);
-                browser = launched.Browser;
-                context = launched.Context;
-            }
-
-            if (options.CfClearance is not null)
-            {
-                await context.AddCookiesAsync([
-                    new Cookie
-                    {
-                        Name = "cf_clearance",
-                        Value = options.CfClearance,
-                        Domain = options.BaseUri.Host,
-                        Path = "/",
-                        Secure = options.BaseUri.Scheme == Uri.UriSchemeHttps,
-                        HttpOnly = true,
-                    },
-                ]).ConfigureAwait(false);
-            }
-
-            return context;
-        }
-        finally
-        {
-            browserGate.Release();
-        }
     }
 
     private async Task WaitForRequestSlotAsync(CancellationToken cancellationToken)
@@ -307,7 +110,6 @@ public sealed partial class MceIndexCrawler(
             {
                 await Task.Delay(nextRequestAt - now, timeProvider, cancellationToken).ConfigureAwait(false);
             }
-
             nextRequestAt = timeProvider.GetUtcNow() + options.CrawlDelay;
         }
         finally
@@ -316,95 +118,127 @@ public sealed partial class MceIndexCrawler(
         }
     }
 
-    private async Task<ChartData[]> CaptureLifeIndexViewsAsync(
-        IPage page,
-        List<string> documents,
-        int totalDocumentCharacters,
-        ChartData[] initialCharts)
+    private async Task WaitForReadyAsync(CamofoxTab tab, Uri target, CancellationToken cancellationToken)
     {
-        var activeView = await page.EvaluateAsync<string?>(
-            """
-            labels => {
-              const active = document.querySelector("button[data-testid='stBaseButton-segmented_controlActive']");
-              const text = active?.innerText.trim();
-              return labels.includes(text) ? text : null;
-            }
-            """,
-            LifeIndexViews).ConfigureAwait(false);
-        if (activeView is null)
+        var expectedCharts = IsCanonicalMceIndex(target) &&
+            ProductionChartMinimums.TryGetValue(target.AbsolutePath.TrimEnd('/'), out var minimum)
+                ? minimum.Initial
+                : 0;
+        var expression = $$"""
+            (async () => {
+              const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+              const deadline = Date.now() + {{Milliseconds(options.RequestTimeout)}};
+              while (Date.now() < deadline) {
+                const main = document.querySelector("[data-testid='stMain'], main");
+                const heading = main?.querySelector("h1")?.innerText.trim();
+                const charts = document.querySelectorAll("[data-testid='stPlotlyChart'] .js-plotly-plot").length;
+                if (heading && charts >= {{expectedCharts}}) return { ready: true, html: document.documentElement.outerHTML };
+                await sleep(200);
+              }
+              return { ready: false, html: document.documentElement.outerHTML };
+            })()
+            """;
+        var result = await camofox.EvaluateAsync(tab, expression, cancellationToken).ConfigureAwait(false);
+        var html = result.GetProperty("html").GetString() ?? string.Empty;
+        if (MceIndexParser.IsAccessChallenge(html))
         {
             throw new MceIndexException(
-                MceIndexErrorCode.ExtractionFailed,
-                "MCEIndex did not expose the expected life-index view selector.");
+                MceIndexErrorCode.AccessChallenge,
+                "Cloudflare verification blocked MCEIndex acquisition.");
         }
+        if (!result.GetProperty("ready").GetBoolean())
+        {
+            throw new MceIndexException(
+                MceIndexErrorCode.LoadTimeout,
+                $"MCEIndex did not become ready within {options.RequestTimeout.TotalMilliseconds:F0}ms.");
+        }
+        await WaitForDomQuietAsync(tab, cancellationToken).ConfigureAwait(false);
+        await ScrollLazyContentAsync(tab, cancellationToken).ConfigureAwait(false);
+    }
 
+    private async Task<int> CaptureDocumentsAsync(
+        CamofoxTab tab,
+        List<string> documents,
+        int totalDocumentCharacters,
+        CancellationToken cancellationToken)
+    {
+        var remainingDocuments = MceIndexParser.MaxHtmlDocuments - documents.Count;
+        var remainingCharacters = MceIndexParser.MaxTotalHtmlCharacters - totalDocumentCharacters;
+        if (remainingDocuments <= 0 || remainingCharacters <= 0)
+        {
+            throw new MceIndexException(MceIndexErrorCode.ExtractionFailed, "MCEIndex HTML exceeded safe extraction limits.");
+        }
+        var expression = $$"""
+            (() => {
+              const documents = [document.documentElement.outerHTML];
+              for (const frame of document.querySelectorAll("iframe")) {
+                try {
+                  const html = frame.contentDocument?.documentElement?.outerHTML;
+                  if (html) documents.push(html);
+                } catch {}
+              }
+              if (documents.length > {{remainingDocuments}} || documents.reduce((sum, value) => sum + value.length, 0) > {{remainingCharacters}}) {
+                return { limitExceeded: true, documents: [] };
+              }
+              return { limitExceeded: false, documents };
+            })()
+            """;
+        var result = await camofox.EvaluateAsync(tab, expression, cancellationToken).ConfigureAwait(false);
+        if (result.GetProperty("limitExceeded").GetBoolean())
+        {
+            throw new MceIndexException(MceIndexErrorCode.ExtractionFailed, "MCEIndex HTML exceeded safe extraction limits.");
+        }
+        foreach (var document in result.GetProperty("documents").EnumerateArray())
+        {
+            var html = document.GetString() ?? string.Empty;
+            totalDocumentCharacters = MceIndexParser.IncludeDocument(html, totalDocumentCharacters);
+            documents.Add(html);
+        }
+        if (documents.Any(MceIndexParser.IsAccessChallenge))
+        {
+            throw new MceIndexException(MceIndexErrorCode.AccessChallenge, "Cloudflare verification blocked MCEIndex acquisition.");
+        }
+        return totalDocumentCharacters;
+    }
+
+    private async Task<ChartData[]> CaptureLifeIndexViewsAsync(
+        CamofoxTab tab,
+        List<string> documents,
+        int totalDocumentCharacters,
+        ChartData[] initialCharts,
+        CancellationToken cancellationToken)
+    {
+        var activeView = await GetActiveViewAsync(tab, cancellationToken).ConfigureAwait(false);
         var charts = new List<ChartData>();
         if (activeView == "行业下钻")
         {
-            var industry = await GetSelectedIndustryAsync(page).ConfigureAwait(false);
+            var industry = await GetSelectedIndustryAsync(tab, cancellationToken).ConfigureAwait(false);
             charts.AddRange(LabelCharts($"行业下钻 / {industry}", initialCharts));
             totalDocumentCharacters = await CaptureOtherIndustriesAsync(
-                page,
-                documents,
-                totalDocumentCharacters,
-                charts,
-                industry).ConfigureAwait(false);
+                tab, documents, totalDocumentCharacters, charts, industry, cancellationToken).ConfigureAwait(false);
         }
         else
         {
             charts.AddRange(LabelCharts(activeView, initialCharts));
         }
+
         foreach (var view in LifeIndexViews)
         {
             if (view == activeView)
             {
                 continue;
             }
-
-            var control = page.GetByRole(AriaRole.Button, new PageGetByRoleOptions
-            {
-                Name = view,
-                Exact = true,
-            });
-            if (await control.CountAsync().ConfigureAwait(false) != 1)
-            {
-                throw new MceIndexException(
-                    MceIndexErrorCode.ExtractionFailed,
-                    $"MCEIndex life-index view “{view}” was not available.");
-            }
-
-            await control.ClickAsync(new LocatorClickOptions
-            {
-                Timeout = (float)options.RequestTimeout.TotalMilliseconds,
-            }).ConfigureAwait(false);
-            await page.WaitForFunctionAsync(
-                """
-                view => Array.from(
-                  document.querySelectorAll("button[data-testid='stBaseButton-segmented_controlActive']")
-                ).some(button => button.innerText.trim() === view)
-                """,
-                view,
-                new PageWaitForFunctionOptions
-                {
-                    Timeout = (float)options.RequestTimeout.TotalMilliseconds,
-                }).ConfigureAwait(false);
-            await WaitForDomQuietAsync(page).ConfigureAwait(false);
-            await AssertNoChallengeAsync(page).ConfigureAwait(false);
-
-            var document = await page.ContentAsync().ConfigureAwait(false);
-            totalDocumentCharacters = MceIndexParser.IncludeDocument(document, totalDocumentCharacters);
-            documents.Add(document);
-            var viewCharts = await ExtractChartsAsync(page).ConfigureAwait(false);
+            await SelectViewAsync(tab, view, cancellationToken).ConfigureAwait(false);
+            await AssertNoChallengeAsync(tab, cancellationToken).ConfigureAwait(false);
+            totalDocumentCharacters = await CaptureDocumentsAsync(
+                tab, documents, totalDocumentCharacters, cancellationToken).ConfigureAwait(false);
+            var viewCharts = await ExtractChartsAsync(tab, cancellationToken).ConfigureAwait(false);
             if (view == "行业下钻")
             {
-                var industry = await GetSelectedIndustryAsync(page).ConfigureAwait(false);
+                var industry = await GetSelectedIndustryAsync(tab, cancellationToken).ConfigureAwait(false);
                 charts.AddRange(LabelCharts($"行业下钻 / {industry}", viewCharts));
                 totalDocumentCharacters = await CaptureOtherIndustriesAsync(
-                    page,
-                    documents,
-                    totalDocumentCharacters,
-                    charts,
-                    industry).ConfigureAwait(false);
+                    tab, documents, totalDocumentCharacters, charts, industry, cancellationToken).ConfigureAwait(false);
             }
             else
             {
@@ -412,79 +246,17 @@ public sealed partial class MceIndexCrawler(
             }
         }
 
-        var totalPoints = charts.Sum(chart => chart.Series.Sum(series => series.Points.Length));
-        if (charts.Count > MaxCharts || totalPoints > MaxTotalChartPoints)
-        {
-            throw new MceIndexException(
-                MceIndexErrorCode.ExtractionFailed,
-                "MCEIndex chart data exceeded safe extraction limits.");
-        }
+        ValidateResourceLimits(charts);
         return [.. charts];
     }
 
-    private async Task<bool> SelectAllHistoryAsync(IPage page)
-    {
-        var changed = false;
-        var control = page.GetByRole(AriaRole.Button, new PageGetByRoleOptions
-        {
-            Name = "All",
-            Exact = true,
-        });
-        var count = await control.CountAsync().ConfigureAwait(false);
-        for (var index = 0; index < count; index++)
-        {
-            var item = control.Nth(index);
-            if (!await item.IsVisibleAsync().ConfigureAwait(false) ||
-                await item.GetAttributeAsync("data-testid").ConfigureAwait(false) ==
-                "stBaseButton-segmented_controlActive")
-            {
-                continue;
-            }
-
-            changed = true;
-            await item.ClickAsync(new LocatorClickOptions
-            {
-                Timeout = (float)options.RequestTimeout.TotalMilliseconds,
-            }).ConfigureAwait(false);
-            await page.WaitForFunctionAsync(
-                """
-                index => Array.from(document.querySelectorAll("button"))
-                  .filter(button => button.innerText.trim() === "All")[index]
-                  ?.getAttribute("data-testid") === "stBaseButton-segmented_controlActive"
-                """,
-                index,
-                new PageWaitForFunctionOptions
-                {
-                    Timeout = (float)options.RequestTimeout.TotalMilliseconds,
-                }).ConfigureAwait(false);
-            await WaitForDomQuietAsync(page).ConfigureAwait(false);
-            await AssertNoChallengeAsync(page).ConfigureAwait(false);
-        }
-
-        var inactiveVisibleControls = await page.EvaluateAsync<int>(
-            """
-            () => Array.from(document.querySelectorAll("button"))
-              .filter(button =>
-                button.innerText.trim() === "All" &&
-                button.getClientRects().length > 0 &&
-                button.getAttribute("data-testid") !== "stBaseButton-segmented_controlActive"
-              ).length
-            """).ConfigureAwait(false);
-        if (inactiveVisibleControls > 0)
-        {
-            throw new MceIndexException(
-                MceIndexErrorCode.ExtractionFailed,
-                "MCEIndex did not activate every visible All-history control.");
-        }
-        return changed;
-    }
-
     private async Task<int> CaptureOtherIndustriesAsync(
-        IPage page,
+        CamofoxTab tab,
         List<string> documents,
         int totalDocumentCharacters,
         List<ChartData> charts,
-        string selectedIndustry)
+        string selectedIndustry,
+        CancellationToken cancellationToken)
     {
         foreach (var industry in LifeIndexIndustries)
         {
@@ -492,82 +264,239 @@ public sealed partial class MceIndexCrawler(
             {
                 continue;
             }
-
-            var selectbox = page.Locator("[data-testid='stSelectbox'] [role='combobox']");
-            if (await selectbox.CountAsync().ConfigureAwait(false) != 1)
-            {
-                throw new MceIndexException(
-                    MceIndexErrorCode.ExtractionFailed,
-                    "MCEIndex did not expose the expected industry selector.");
-            }
-            await selectbox.ClickAsync(new LocatorClickOptions
-            {
-                Timeout = (float)options.RequestTimeout.TotalMilliseconds,
-            }).ConfigureAwait(false);
-
-            var option = page.GetByRole(AriaRole.Option, new PageGetByRoleOptions
-            {
-                Name = industry,
-                Exact = true,
-            });
-            if (await option.CountAsync().ConfigureAwait(false) != 1)
-            {
-                throw new MceIndexException(
-                    MceIndexErrorCode.ExtractionFailed,
-                    $"MCEIndex industry “{industry}” was not available.");
-            }
-            await option.ClickAsync(new LocatorClickOptions
-            {
-                Timeout = (float)options.RequestTimeout.TotalMilliseconds,
-            }).ConfigureAwait(false);
-            await page.WaitForFunctionAsync(
-                """
-                industry => document.querySelector("[data-testid='stSelectbox'] [value]")
-                  ?.getAttribute("value") === industry
-                """,
-                industry,
-                new PageWaitForFunctionOptions
-                {
-                    Timeout = (float)options.RequestTimeout.TotalMilliseconds,
-                }).ConfigureAwait(false);
-            await WaitForDomQuietAsync(page).ConfigureAwait(false);
-            await AssertNoChallengeAsync(page).ConfigureAwait(false);
-
-            var document = await page.ContentAsync().ConfigureAwait(false);
-            totalDocumentCharacters = MceIndexParser.IncludeDocument(document, totalDocumentCharacters);
-            documents.Add(document);
+            await SelectIndustryAsync(tab, industry, cancellationToken).ConfigureAwait(false);
+            totalDocumentCharacters = await CaptureDocumentsAsync(
+                tab, documents, totalDocumentCharacters, cancellationToken).ConfigureAwait(false);
             charts.AddRange(LabelCharts(
                 $"行业下钻 / {industry}",
-                await ExtractChartsAsync(page).ConfigureAwait(false)));
+                await ExtractChartsAsync(tab, cancellationToken).ConfigureAwait(false)));
         }
         return totalDocumentCharacters;
     }
 
-    private static async Task<string> GetSelectedIndustryAsync(IPage page)
+    private async Task<string> GetActiveViewAsync(CamofoxTab tab, CancellationToken cancellationToken)
     {
-        var industry = await page.EvaluateAsync<string?>(
-            """
-            () => document.querySelector("[data-testid='stSelectbox'] [value]")
+        var result = await camofox.EvaluateAsync(
+            tab,
+            "(() => [...document.querySelectorAll(\"button[data-testid='stBaseButton-segmented_controlActive']\")].map(button => button.innerText.trim()).find(text => " +
+            JsonSerializer.Serialize(LifeIndexViews) + ".includes(text)) || null)()",
+            cancellationToken).ConfigureAwait(false);
+        var view = result.GetString();
+        if (view is null)
+        {
+            throw new MceIndexException(MceIndexErrorCode.ExtractionFailed, "MCEIndex did not expose the expected life-index view selector.");
+        }
+        return view;
+    }
 
-              ?.getAttribute("value")
-            """).ConfigureAwait(false);
+    private async Task SelectViewAsync(CamofoxTab tab, string view, CancellationToken cancellationToken)
+    {
+        var expression = $$"""
+            (async () => {
+              const target = {{JsonSerializer.Serialize(view)}};
+              const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+              const button = [...document.querySelectorAll("button")].find(candidate => candidate.innerText.trim() === target && candidate.getClientRects().length > 0);
+              if (!button) return false;
+              if (button.getAttribute("data-testid") !== "stBaseButton-segmented_controlActive") button.click();
+              const deadline = Date.now() + {{Milliseconds(options.RequestTimeout)}};
+              while (Date.now() < deadline) {
+                const active = [...document.querySelectorAll("button[data-testid='stBaseButton-segmented_controlActive']")]
+                  .some(candidate => candidate.innerText.trim() === target);
+                if (active) { await sleep({{Milliseconds(options.DomQuietPeriod)}}); return true; }
+                await sleep(100);
+              }
+              return false;
+            })()
+            """;
+        var result = await camofox.EvaluateAsync(tab, expression, cancellationToken).ConfigureAwait(false);
+        if (!result.GetBoolean())
+        {
+            throw new MceIndexException(MceIndexErrorCode.ExtractionFailed, $"MCEIndex life-index view “{view}” was not available.");
+        }
+        await ScrollLazyContentAsync(tab, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<string> GetSelectedIndustryAsync(CamofoxTab tab, CancellationToken cancellationToken)
+    {
+        var result = await camofox.EvaluateAsync(
+            tab,
+            "(() => document.querySelector(\"[data-testid='stSelectbox'] [value]\")?.getAttribute('value') || null)()",
+            cancellationToken).ConfigureAwait(false);
+        var industry = result.GetString();
         if (industry is null || !LifeIndexIndustries.Contains(industry, StringComparer.Ordinal))
         {
-            throw new MceIndexException(
-                MceIndexErrorCode.ExtractionFailed,
-                "MCEIndex did not expose a supported selected industry.");
+            throw new MceIndexException(MceIndexErrorCode.ExtractionFailed, "MCEIndex did not expose a supported selected industry.");
         }
         return industry;
     }
+
+    private async Task SelectIndustryAsync(CamofoxTab tab, string industry, CancellationToken cancellationToken)
+    {
+        var expression = $$"""
+            (async () => {
+              const target = {{JsonSerializer.Serialize(industry)}};
+              const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+              const select = document.querySelector("[data-testid='stSelectbox'] [role='combobox']");
+              if (!select) return false;
+              select.click();
+              const optionDeadline = Date.now() + {{Milliseconds(options.RequestTimeout)}};
+              let option;
+              while (Date.now() < optionDeadline && !option) {
+                option = [...document.querySelectorAll("[role='option']")].find(candidate => candidate.innerText.trim() === target);
+                if (!option) await sleep(100);
+              }
+              if (!option) return false;
+              option.click();
+              while (Date.now() < optionDeadline) {
+                if (document.querySelector("[data-testid='stSelectbox'] [value]")?.getAttribute("value") === target) {
+                  await sleep({{Milliseconds(options.DomQuietPeriod)}});
+                  return true;
+                }
+                await sleep(100);
+              }
+              return false;
+            })()
+            """;
+        var result = await camofox.EvaluateAsync(tab, expression, cancellationToken).ConfigureAwait(false);
+        if (!result.GetBoolean())
+        {
+            throw new MceIndexException(MceIndexErrorCode.ExtractionFailed, $"MCEIndex industry “{industry}” was not available.");
+        }
+        await ScrollLazyContentAsync(tab, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> SelectAllHistoryAsync(CamofoxTab tab, CancellationToken cancellationToken)
+    {
+        var expression = $$"""
+            (async () => {
+              const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+              const deadline = Date.now() + {{Milliseconds(options.RequestTimeout)}};
+              let changed = false;
+              while (Date.now() < deadline) {
+                const control = [...document.querySelectorAll("button")].find(button =>
+                  button.innerText.trim() === "All" && button.getClientRects().length > 0 &&
+                  button.getAttribute("data-testid") !== "stBaseButton-segmented_controlActive");
+                if (!control) break;
+                changed = true;
+                control.click();
+                await sleep({{Milliseconds(options.DomQuietPeriod)}});
+              }
+              const inactive = [...document.querySelectorAll("button")].some(button =>
+                button.innerText.trim() === "All" && button.getClientRects().length > 0 &&
+                button.getAttribute("data-testid") !== "stBaseButton-segmented_controlActive");
+              if (inactive) return { changed, complete: false };
+              await sleep({{Milliseconds(options.DomQuietPeriod)}});
+              return { changed, complete: true };
+            })()
+            """;
+        var result = await camofox.EvaluateAsync(tab, expression, cancellationToken).ConfigureAwait(false);
+        if (!result.GetProperty("complete").GetBoolean())
+        {
+            throw new MceIndexException(MceIndexErrorCode.ExtractionFailed, "MCEIndex did not activate every visible All-history control.");
+        }
+        if (result.GetProperty("changed").GetBoolean())
+        {
+            await WaitForChartsStableAsync(tab, cancellationToken).ConfigureAwait(false);
+        }
+        return result.GetProperty("changed").GetBoolean();
+    }
+
+    private async Task ScrollLazyContentAsync(CamofoxTab tab, CancellationToken cancellationToken)
+    {
+        var expression = $$"""
+            (async () => {
+              const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+              for (let offset = 0; offset < document.documentElement.scrollHeight; offset += 700) {
+                window.scrollTo(0, offset);
+                await sleep(80);
+              }
+              window.scrollTo(0, 0);
+              await sleep({{Milliseconds(options.DomQuietPeriod)}});
+              return true;
+            })()
+            """;
+        await camofox.EvaluateAsync(tab, expression, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task WaitForChartsStableAsync(CamofoxTab tab, CancellationToken cancellationToken)
+    {
+        var expression = $$"""
+            (async () => {
+              const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+              const signature = () => [...document.querySelectorAll("[data-testid='stPlotlyChart'] .js-plotly-plot")].map(plot =>
+                (plot._fullData?.length ? plot._fullData : (plot.data || [])).map(trace =>
+                  Math.max(trace.x?.length || 0, trace.y?.length || 0, trace.labels?.length || 0, trace.values?.length || 0)).join(",")).join(";");
+              const deadline = Date.now() + {{Milliseconds(options.RequestTimeout)}};
+              let previous = signature();
+              let unchangedSince = Date.now();
+              while (Date.now() < deadline) {
+                await sleep(200);
+                const current = signature();
+                if (current !== previous) { previous = current; unchangedSince = Date.now(); }
+                if (current && Date.now() - unchangedSince >= {{Milliseconds(options.DomQuietPeriod)}}) return true;
+              }
+              return false;
+            })()
+            """;
+        var stable = await camofox.EvaluateAsync(tab, expression, cancellationToken).ConfigureAwait(false);
+        if (!stable.GetBoolean())
+        {
+            throw new MceIndexException(MceIndexErrorCode.LoadTimeout, "MCEIndex charts did not stabilize before extraction.");
+        }
+    }
+
+    private async Task WaitForDomQuietAsync(CamofoxTab tab, CancellationToken cancellationToken)
+    {
+        var expression = $$"""
+            (() => new Promise(resolve => {
+              const root = document.querySelector("[data-testid='stMain'], main");
+              if (!root) { resolve(false); return; }
+              let quietTimer;
+              let maximumTimer;
+              const finish = value => { clearTimeout(quietTimer); clearTimeout(maximumTimer); observer.disconnect(); resolve(value); };
+              const arm = () => { clearTimeout(quietTimer); quietTimer = setTimeout(() => finish(true), {{Milliseconds(options.DomQuietPeriod)}}); };
+              const observer = new MutationObserver(arm);
+              observer.observe(root, { subtree: true, childList: true, attributes: true, characterData: true });
+              maximumTimer = setTimeout(() => finish(false), {{Milliseconds(options.RequestTimeout)}});
+              arm();
+            }))()
+            """;
+        await camofox.EvaluateAsync(tab, expression, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task AssertNoChallengeAsync(CamofoxTab tab, CancellationToken cancellationToken)
+    {
+        var result = await camofox.EvaluateAsync(
+            tab,
+            "(() => document.documentElement.outerHTML)()",
+            cancellationToken).ConfigureAwait(false);
+        if (MceIndexParser.IsAccessChallenge(result.GetString() ?? string.Empty))
+        {
+            throw new MceIndexException(MceIndexErrorCode.AccessChallenge, "Cloudflare verification blocked MCEIndex acquisition.");
+        }
+    }
+
+    private async Task<Uri> GetSourceAsync(CamofoxTab tab, Uri fallback, CancellationToken cancellationToken)
+    {
+        var result = await camofox.EvaluateAsync(tab, "(() => location.href)()", cancellationToken).ConfigureAwait(false);
+        return Uri.TryCreate(result.GetString(), UriKind.Absolute, out var source) ? source : fallback;
+    }
+
+    private async Task<ChartData[]> ExtractChartsAsync(CamofoxTab tab, CancellationToken cancellationToken)
+    {
+        var result = await camofox.EvaluateAsync(tab, ChartExtractionExpression, cancellationToken).ConfigureAwait(false);
+        if (result.ValueKind == JsonValueKind.String && result.GetString() == "__MCEINDEX_RESOURCE_LIMIT__")
+        {
+            throw new MceIndexException(MceIndexErrorCode.ExtractionFailed, "MCEIndex chart data exceeded safe extraction limits.");
+        }
+        return result.Deserialize(MceJsonContext.Default.ChartDataArray) ?? [];
+    }
+
     private static ChartData[] MergeCharts(ChartData[] initial, ChartData[] allHistory)
     {
         var merged = initial.ToList();
         var indices = new Dictionary<string, int>(StringComparer.Ordinal);
-        for (var index = 0; index < merged.Count; index++)
-        {
-            indices[ChartKey(merged[index])] = index;
-        }
-
+        for (var index = 0; index < merged.Count; index++) indices[ChartKey(merged[index])] = index;
         foreach (var chart in allHistory)
         {
             var key = ChartKey(chart);
@@ -575,52 +504,18 @@ public sealed partial class MceIndexCrawler(
             {
                 indices[key] = merged.Count;
                 merged.Add(chart);
-                continue;
             }
-
-            var existingPoints = merged[index].Series.Sum(series => series.Points.Length);
-            var candidatePoints = chart.Series.Sum(series => series.Points.Length);
-            if (candidatePoints > existingPoints)
+            else if (chart.Series.Sum(series => series.Points.Length) > merged[index].Series.Sum(series => series.Points.Length))
             {
                 merged[index] = chart;
             }
         }
-
-        var totalPoints = merged.Sum(chart => chart.Series.Sum(series => series.Points.Length));
-        if (merged.Count > MaxCharts || totalPoints > MaxTotalChartPoints)
-        {
-            throw new MceIndexException(
-                MceIndexErrorCode.ExtractionFailed,
-                "MCEIndex chart data exceeded safe extraction limits.");
-        }
+        ValidateResourceLimits(merged);
         return [.. merged];
     }
 
     private static string ChartKey(ChartData chart) =>
-        string.Join('\u001F',
-            chart.Title,
-            string.Join('\u001E', chart.Series.Select(series => $"{series.Name}\u001D{series.Type}")));
-
-    private async Task WaitForExpectedInitialChartsAsync(IPage page, Uri target)
-    {
-        if (!IsCanonicalMceIndex(target) ||
-            !ProductionChartMinimums.TryGetValue(target.AbsolutePath.TrimEnd('/'), out var minimum))
-        {
-            return;
-        }
-
-        await page.WaitForFunctionAsync(
-            """
-            expected => document.querySelectorAll(
-              "[data-testid='stPlotlyChart'] .js-plotly-plot"
-            ).length >= expected
-            """,
-            minimum.Initial,
-            new PageWaitForFunctionOptions
-            {
-                Timeout = (float)options.RequestTimeout.TotalMilliseconds,
-            }).ConfigureAwait(false);
-    }
+        string.Join('\u001F', chart.Title, string.Join('\u001E', chart.Series.Select(series => $"{series.Name}\u001D{series.Type}")));
 
     internal static void ValidateProductionChartCoverage(Uri source, ChartData[] charts)
     {
@@ -629,244 +524,106 @@ public sealed partial class MceIndexCrawler(
         {
             return;
         }
-
         var points = charts.Sum(chart => chart.Series.Sum(series => series.Points.Length));
         if (charts.Length >= minimum.Captured && points >= minimum.Points)
         {
             return;
         }
-
         throw new MceIndexException(
             MceIndexErrorCode.ExtractionFailed,
-            $"MCEIndex returned incomplete chart coverage for {source.AbsolutePath}: " +
-            $"expected at least {minimum.Captured} charts and {minimum.Points} points, " +
-            $"received {charts.Length} charts and {points} points.");
+            $"MCEIndex returned incomplete chart coverage for {source.AbsolutePath}: expected at least {minimum.Captured} charts and {minimum.Points} points, received {charts.Length} charts and {points} points.");
     }
 
-    private static bool IsCanonicalMceIndex(Uri source) =>
-        source.Host.Equals("mceindex.com", StringComparison.OrdinalIgnoreCase);
+    private static bool IsCanonicalMceIndex(Uri source) => source.Host.Equals("mceindex.com", StringComparison.OrdinalIgnoreCase);
 
     private static IEnumerable<ChartData> LabelCharts(string view, ChartData[] charts) =>
         charts.Select((chart, index) =>
         {
-            var genericTitle = string.IsNullOrWhiteSpace(chart.Title) ||
-                chart.Title.StartsWith('<') ||
-                chart.Title.StartsWith("图表 ", StringComparison.Ordinal);
+            var genericTitle = string.IsNullOrWhiteSpace(chart.Title) || chart.Title.StartsWith('<') || chart.Title.StartsWith("图表 ", StringComparison.Ordinal);
             var title = genericTitle ? $"图表 {index + 1}" : chart.Title;
             return chart with
             {
                 Title = $"{view} · {title}",
-                Description = genericTitle
-                    ? $"MCEIndex“{view}”视图中的图表。"
-                    : chart.Description,
+                Description = genericTitle ? $"MCEIndex“{view}”视图中的图表。" : chart.Description,
             };
         });
 
-    private async Task<ChartData[]> ExtractChartsAsync(IPage page)
+    private static void ValidateResourceLimits(IEnumerable<ChartData> charts)
     {
-        const string selector = "[data-testid='stPlotlyChart'] .js-plotly-plot";
-        var plot = page.Locator(selector);
-        var plotCount = await plot.CountAsync().ConfigureAwait(false);
-        if (plotCount > MaxCharts)
+        var materialized = charts as ICollection<ChartData> ?? charts.ToArray();
+        if (materialized.Count > MaxCharts || materialized.Sum(chart => chart.Series.Sum(series => series.Points.Length)) > MaxTotalChartPoints)
         {
-            throw new MceIndexException(
-                MceIndexErrorCode.ExtractionFailed,
-                "MCEIndex chart data exceeded safe extraction limits.");
+            throw new MceIndexException(MceIndexErrorCode.ExtractionFailed, "MCEIndex chart data exceeded safe extraction limits.");
         }
-        for (var index = 0; index < plotCount; index++)
-        {
-            await plot.Nth(index).ScrollIntoViewIfNeededAsync(new LocatorScrollIntoViewIfNeededOptions
-            {
-                Timeout = (float)options.RequestTimeout.TotalMilliseconds,
-            }).ConfigureAwait(false);
-            await page.WaitForFunctionAsync(
-                """
-                ({ selector, index }) => {
-                  const plot = document.querySelectorAll(selector)[index];
-                  const data = plot?._fullData?.length ? plot._fullData : plot?.data;
-                  return Array.isArray(data) && data.length > 0;
-                }
-                """,
-                new { selector, index },
-                new PageWaitForFunctionOptions
-                {
-                    Timeout = (float)options.RequestTimeout.TotalMilliseconds,
-                }).ConfigureAwait(false);
-        }
+    }
 
-        var json = await page.EvaluateAsync<string>(
-            """
-            () => {
-              const MAX_CHARTS = 32;
-              const MAX_SERIES_PER_CHART = 32;
-              const MAX_POINTS_PER_SERIES = 10000;
-              const MAX_TOTAL_POINTS = 100000;
-              const MAX_BINARY_CHARACTERS = 1000000;
-              let extractionLimitExceeded = false;
-              let totalPoints = 0;
-              const valuesOf = (input) => {
-                if (input == null) return [];
-                if (Array.isArray(input) || ArrayBuffer.isView(input)) {
-                  if (input.length > MAX_POINTS_PER_SERIES) extractionLimitExceeded = true;
-                  const length = Math.min(input.length, MAX_POINTS_PER_SERIES);
-                  return Array.from({ length }, (_, index) => input[index]);
-                }
-                if (typeof input !== "object" || typeof input.bdata !== "string") return [input];
-                if (input.bdata.length > MAX_BINARY_CHARACTERS) {
-                  extractionLimitExceeded = true;
-                  return [];
-                }
+    private static int Milliseconds(TimeSpan value) => checked((int)value.TotalMilliseconds);
 
-                const binary = atob(input.bdata);
-                const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
-                const dtype = String(input.dtype || "f8").replace(/[<>=|]/g, "");
-                const constructors = {
-                  f4: Float32Array, f8: Float64Array,
-                  i1: Int8Array, i2: Int16Array, i4: Int32Array,
-                  u1: Uint8Array, u2: Uint16Array, u4: Uint32Array,
-                };
-                const TypedArray = constructors[dtype];
-                if (!TypedArray) return [];
-                const values = new TypedArray(bytes.buffer);
-                if (values.length > MAX_POINTS_PER_SERIES) extractionLimitExceeded = true;
-                return Array.from(values.subarray(0, MAX_POINTS_PER_SERIES));
-              };
-              const textOf = (value) => value == null ? null : String(value);
-              const numberOf = (value) => {
-                if (typeof value === "number") return Number.isFinite(value) ? value : null;
-                if (typeof value !== "string" || value.trim() === "") return null;
-                const parsed = Number(value);
-                return Number.isFinite(parsed) ? parsed : null;
-              };
-              const headerFor = (plot) => {
-                let cursor = plot.closest("[data-testid='stElementContainer']");
-                for (let index = 0; cursor && index < 8; index += 1, cursor = cursor.previousElementSibling) {
-                  const header = cursor.querySelector?.(".chart-header");
-                  if (header) return header;
-                }
-                return null;
-              };
-
-              const plots = Array.from(document.querySelectorAll("[data-testid='stPlotlyChart'] .js-plotly-plot"));
-              if (plots.length > MAX_CHARTS) return "__MCEINDEX_RESOURCE_LIMIT__";
-              const charts = plots.map((plot, chartIndex) => {
-                  const header = headerFor(plot);
-                  const layout = plot._fullLayout || plot.layout || {};
-                  const title = header?.querySelector("h1,h2,h3,h4,h5,h6")?.innerText
-                    || layout.title?.text
-                    || `图表 ${chartIndex + 1}`;
-                  const description = header?.querySelector(".chart-header-summary")?.innerText
-                    || `MCEIndex 页面中的“${title}”图表。`;
-                  const notes = Array.from(header?.querySelectorAll("p:not(.chart-header-summary)") || [])
-                    .map(element => element.innerText.trim())
-                    .filter(Boolean);
-                  const traces = Array.from(plot._fullData?.length ? plot._fullData : (plot.data || []));
-                  if (traces.length > MAX_SERIES_PER_CHART) extractionLimitExceeded = true;
-                  const series = traces.slice(0, MAX_SERIES_PER_CHART).map(trace => {
-                    const x = valuesOf(trace.x);
-                    const y = valuesOf(trace.y);
-                    const labels = valuesOf(trace.labels);
-                    const values = valuesOf(trace.values);
-                    const texts = valuesOf(trace.text);
-                    const tickValues = valuesOf(layout.yaxis?.tickvals);
-                    const tickLabels = valuesOf(layout.yaxis?.ticktext);
-                    const yCategories = tickValues.length === tickLabels.length && tickLabels.length > 0
-                      ? y.map(value => {
-                          const index = tickValues.findIndex(tick =>
-                            numberOf(tick) != null && numberOf(value) != null
-                              ? numberOf(tick) === numberOf(value)
-                              : String(tick) === String(value));
-                          return index >= 0 ? tickLabels[index] : value;
-                        })
-                      : y;
-                    const horizontal = trace.orientation === "h";
-                    const categories = horizontal
-                      ? yCategories
-                      : (tickLabels.length > 0 && x.length > 0 ? yCategories : (x.length > 0 ? x : labels));
-                    const numericValues = horizontal
-                      ? x
-                      : (tickLabels.length > 0 && x.length > 0 ? x : (y.length > 0 ? y : values));
-                    const count = Math.max(categories.length, numericValues.length, texts.length);
-                    if (count > MAX_POINTS_PER_SERIES || totalPoints > MAX_TOTAL_POINTS - count) {
-                      extractionLimitExceeded = true;
-                      return { name: textOf(trace.name), type: textOf(trace.type), points: [] };
-                    }
-                    totalPoints += count;
-                    const points = Array.from({ length: count }, (_, pointIndex) => ({
-                      category: textOf(categories[pointIndex]),
-                      value: numberOf(numericValues[pointIndex]),
-                      text: textOf(texts[pointIndex]),
-                    }));
-                    return {
-                      name: textOf(trace.name),
-                      type: textOf(trace.type),
-                      points,
-                    };
-                  }).filter(item => item.points.length > 0);
-                  return {
-                    title: String(title).trim(),
-                    description: String(description).trim(),
-                    notes,
-                    xAxisTitle: textOf(layout.xaxis?.title?.text),
-                    yAxisTitle: textOf(layout.yaxis?.title?.text),
-                    series,
-                  };
-                }).filter(chart => chart.series.length > 0);
-              if (extractionLimitExceeded) return "__MCEINDEX_RESOURCE_LIMIT__";
-              return JSON.stringify(charts);
+    private const string ChartExtractionExpression = """
+        (() => {
+          const MAX_CHARTS = 32, MAX_SERIES_PER_CHART = 32, MAX_POINTS_PER_SERIES = 10000;
+          const MAX_TOTAL_POINTS = 100000, MAX_BINARY_CHARACTERS = 1000000;
+          let extractionLimitExceeded = false, totalPoints = 0;
+          const valuesOf = input => {
+            if (input == null) return [];
+            if (Array.isArray(input) || ArrayBuffer.isView(input)) {
+              if (input.length > MAX_POINTS_PER_SERIES) extractionLimitExceeded = true;
+              return Array.from({ length: Math.min(input.length, MAX_POINTS_PER_SERIES) }, (_, index) => input[index]);
             }
-            """).ConfigureAwait(false);
-        if (json == "\"__MCEINDEX_RESOURCE_LIMIT__\"" || json == "__MCEINDEX_RESOURCE_LIMIT__")
-        {
-            throw new MceIndexException(
-                MceIndexErrorCode.ExtractionFailed,
-                "MCEIndex chart data exceeded safe extraction limits.");
-        }
-
-
-        return JsonSerializer.Deserialize(json, MceJsonContext.Default.ChartDataArray) ?? [];
-    }
-
-    private static async Task AssertNoChallengeAsync(IPage page)
-    {
-        var html = await page.ContentAsync().ConfigureAwait(false);
-        if (MceIndexParser.IsAccessChallenge(html))
-        {
-            throw new MceIndexException(MceIndexErrorCode.AccessChallenge,
-                "Cloudflare verification blocked MCEIndex acquisition.");
-        }
-    }
-
-    private async Task WaitForDomQuietAsync(IPage page)
-    {
-        var quietMilliseconds = (int)options.DomQuietPeriod.TotalMilliseconds;
-        var maximumMilliseconds = (int)options.RequestTimeout.TotalMilliseconds;
-        await page.EvaluateAsync(
-            """
-            ({ quietMilliseconds, maximumMilliseconds }) => new Promise((resolve) => {
-              const root = document.querySelector("[data-testid='stMain'], main");
-              if (!root) { resolve(false); return; }
-              let quietTimer;
-              let maximumTimer;
-              const finish = (value) => {
-                clearTimeout(quietTimer);
-                clearTimeout(maximumTimer);
-                observer.disconnect();
-                resolve(value);
-              };
-              const arm = () => {
-                clearTimeout(quietTimer);
-                quietTimer = setTimeout(() => finish(true), quietMilliseconds);
-              };
-              const observer = new MutationObserver(arm);
-              observer.observe(root, { subtree: true, childList: true, attributes: true, characterData: true });
-              maximumTimer = setTimeout(() => finish(false), maximumMilliseconds);
-              arm();
-            })
-            """,
-            new { quietMilliseconds, maximumMilliseconds }).ConfigureAwait(false);
-    }
-    [LoggerMessage(Level = LogLevel.Debug, Message = "Skipping inaccessible iframe on {Url}")]
-    private static partial void LogInaccessibleFrame(ILogger logger, Exception error, Uri url);
-
+            if (typeof input !== "object" || typeof input.bdata !== "string") return [input];
+            if (input.bdata.length > MAX_BINARY_CHARACTERS) { extractionLimitExceeded = true; return []; }
+            const binary = atob(input.bdata);
+            const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+            const dtype = String(input.dtype || "f8").replace(/[<>=|]/g, "");
+            const constructors = { f4: Float32Array, f8: Float64Array, i1: Int8Array, i2: Int16Array, i4: Int32Array, u1: Uint8Array, u2: Uint16Array, u4: Uint32Array };
+            const TypedArray = constructors[dtype];
+            if (!TypedArray) return [];
+            const values = new TypedArray(bytes.buffer);
+            if (values.length > MAX_POINTS_PER_SERIES) extractionLimitExceeded = true;
+            return Array.from(values.subarray(0, MAX_POINTS_PER_SERIES));
+          };
+          const textOf = value => value == null ? null : String(value);
+          const numberOf = value => {
+            if (typeof value === "number") return Number.isFinite(value) ? value : null;
+            if (typeof value !== "string" || value.trim() === "") return null;
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : null;
+          };
+          const headerFor = plot => {
+            let cursor = plot.closest("[data-testid='stElementContainer']");
+            for (let index = 0; cursor && index < 8; index += 1, cursor = cursor.previousElementSibling) {
+              const header = cursor.querySelector?.(".chart-header");
+              if (header) return header;
+            }
+            return null;
+          };
+          const plots = Array.from(document.querySelectorAll("[data-testid='stPlotlyChart'] .js-plotly-plot"));
+          if (plots.length > MAX_CHARTS) return "__MCEINDEX_RESOURCE_LIMIT__";
+          const charts = plots.map((plot, chartIndex) => {
+            const header = headerFor(plot), layout = plot._fullLayout || plot.layout || {};
+            const title = header?.querySelector("h1,h2,h3,h4,h5,h6")?.innerText || layout.title?.text || `图表 ${chartIndex + 1}`;
+            const description = header?.querySelector(".chart-header-summary")?.innerText || `MCEIndex 页面中的“${title}”图表。`;
+            const notes = Array.from(header?.querySelectorAll("p:not(.chart-header-summary)") || []).map(element => element.innerText.trim()).filter(Boolean);
+            const traces = Array.from(plot._fullData?.length ? plot._fullData : (plot.data || []));
+            if (traces.length > MAX_SERIES_PER_CHART) extractionLimitExceeded = true;
+            const series = traces.slice(0, MAX_SERIES_PER_CHART).map(trace => {
+              const x = valuesOf(trace.x), y = valuesOf(trace.y), labels = valuesOf(trace.labels), values = valuesOf(trace.values), texts = valuesOf(trace.text);
+              const tickValues = valuesOf(layout.yaxis?.tickvals), tickLabels = valuesOf(layout.yaxis?.ticktext);
+              const yCategories = tickValues.length === tickLabels.length && tickLabels.length > 0 ? y.map(value => {
+                const index = tickValues.findIndex(tick => numberOf(tick) != null && numberOf(value) != null ? numberOf(tick) === numberOf(value) : String(tick) === String(value));
+                return index >= 0 ? tickLabels[index] : value;
+              }) : y;
+              const horizontal = trace.orientation === "h";
+              const categories = horizontal ? yCategories : (tickLabels.length > 0 && x.length > 0 ? yCategories : (x.length > 0 ? x : labels));
+              const numericValues = horizontal ? x : (tickLabels.length > 0 && x.length > 0 ? x : (y.length > 0 ? y : values));
+              const count = Math.max(categories.length, numericValues.length, texts.length);
+              if (count > MAX_POINTS_PER_SERIES || totalPoints > MAX_TOTAL_POINTS - count) { extractionLimitExceeded = true; return { name: textOf(trace.name), type: textOf(trace.type), points: [] }; }
+              totalPoints += count;
+              return { name: textOf(trace.name), type: textOf(trace.type), points: Array.from({ length: count }, (_, index) => ({ category: textOf(categories[index]), value: numberOf(numericValues[index]), text: textOf(texts[index]) })) };
+            }).filter(item => item.points.length > 0);
+            return { title: String(title).trim(), description: String(description).trim(), notes, xAxisTitle: textOf(layout.xaxis?.title?.text), yAxisTitle: textOf(layout.yaxis?.title?.text), series };
+          }).filter(chart => chart.series.length > 0);
+          return extractionLimitExceeded ? "__MCEINDEX_RESOURCE_LIMIT__" : charts;
+        })()
+        """;
 }

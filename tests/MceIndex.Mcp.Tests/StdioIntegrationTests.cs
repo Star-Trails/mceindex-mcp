@@ -18,7 +18,7 @@ public sealed class StdioIntegrationTests
             var environment = StdioClientTransportOptions.GetDefaultEnvironmentVariables();
             environment["MCEINDEX_DB_PATH"] = databasePath;
             environment["MCEINDEX_BASE_URL"] = "http://127.0.0.1:9/";
-            environment["MCEINDEX_BROWSER_EXECUTABLE"] = "/does/not/exist";
+            environment["MCEINDEX_CAMOFOX_URL"] = "http://127.0.0.1:9/";
             var libraryPath = Environment.GetEnvironmentVariable("LD_LIBRARY_PATH");
             if (libraryPath is not null) environment["LD_LIBRARY_PATH"] = libraryPath;
 
@@ -35,7 +35,7 @@ public sealed class StdioIntegrationTests
             await using var client = await McpClient.CreateAsync(transport, cancellationToken: cancellationToken);
             Assert.Equal("MCEIndex", client.ServerInfo.Title);
             Assert.Equal("mceindex-mcp", client.ServerInfo.Name);
-            Assert.Equal("3.9.0", client.ServerInfo.Version);
+            Assert.Equal("4.0.0", client.ServerInfo.Version);
 
             var tools = await client.ListToolsAsync(cancellationToken: cancellationToken);
             Assert.Equal(

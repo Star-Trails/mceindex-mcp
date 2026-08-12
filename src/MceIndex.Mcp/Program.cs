@@ -31,6 +31,7 @@ builder.Logging.SetMinimumLevel(LogLevel.Information);
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<MceIndexParser>();
+builder.Services.AddSingleton<CamofoxClient>();
 builder.Services.AddSingleton(serviceProvider =>
     new MceIndexStore(serviceProvider.GetRequiredService<MceIndexOptions>().DatabasePath));
 builder.Services.AddSingleton<IMceIndexCrawler, MceIndexCrawler>();

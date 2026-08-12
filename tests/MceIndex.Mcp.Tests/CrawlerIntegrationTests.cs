@@ -41,10 +41,10 @@ public sealed class CrawlerIntegrationTests
     [Fact]
     public async Task RendersDynamicPageAndExtractsIframeContent()
     {
-        var browserExecutable = Environment.GetEnvironmentVariable("MCEINDEX_TEST_BROWSER");
-        if (string.IsNullOrWhiteSpace(browserExecutable))
+        var camofoxUrl = Environment.GetEnvironmentVariable("MCEINDEX_TEST_CAMOFOX_URL");
+        if (string.IsNullOrWhiteSpace(camofoxUrl))
         {
-            Assert.Skip("Set MCEINDEX_TEST_BROWSER to run the Playwright browser integration test.");
+            Assert.Skip("Set MCEINDEX_TEST_CAMOFOX_URL to run the Camofox browser integration test.");
         }
 
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -52,15 +52,11 @@ public sealed class CrawlerIntegrationTests
         var options = MceIndexOptions.Load(new Dictionary<string, string?>
         {
             ["MCEINDEX_BASE_URL"] = fixture.Url.AbsoluteUri,
-            ["MCEINDEX_BROWSER_EXECUTABLE"] = browserExecutable,
+            ["MCEINDEX_CAMOFOX_URL"] = camofoxUrl,
             ["MCEINDEX_TIMEOUT_MS"] = "10000",
             ["MCEINDEX_SETTLE_MS"] = "100",
         });
-        await using var crawler = new MceIndexCrawler(
-            options,
-            new MceIndexParser(),
-            TimeProvider.System,
-            NullLogger<MceIndexCrawler>.Instance);
+        await using var crawler = CreateCrawler(options);
 
         var crawled = await crawler.CrawlAsync(fixture.Url, cancellationToken);
 
@@ -85,10 +81,10 @@ public sealed class CrawlerIntegrationTests
     [Fact]
     public async Task CapturesEveryLifeIndexView()
     {
-        var browserExecutable = Environment.GetEnvironmentVariable("MCEINDEX_TEST_BROWSER");
-        if (string.IsNullOrWhiteSpace(browserExecutable))
+        var camofoxUrl = Environment.GetEnvironmentVariable("MCEINDEX_TEST_CAMOFOX_URL");
+        if (string.IsNullOrWhiteSpace(camofoxUrl))
         {
-            Assert.Skip("Set MCEINDEX_TEST_BROWSER to run the Playwright browser integration test.");
+            Assert.Skip("Set MCEINDEX_TEST_CAMOFOX_URL to run the Camofox browser integration test.");
         }
 
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -96,15 +92,11 @@ public sealed class CrawlerIntegrationTests
         var options = MceIndexOptions.Load(new Dictionary<string, string?>
         {
             ["MCEINDEX_BASE_URL"] = fixture.Url.AbsoluteUri,
-            ["MCEINDEX_BROWSER_EXECUTABLE"] = browserExecutable,
+            ["MCEINDEX_CAMOFOX_URL"] = camofoxUrl,
             ["MCEINDEX_TIMEOUT_MS"] = "10000",
             ["MCEINDEX_SETTLE_MS"] = "100",
         });
-        await using var crawler = new MceIndexCrawler(
-            options,
-            new MceIndexParser(),
-            TimeProvider.System,
-            NullLogger<MceIndexCrawler>.Instance);
+        await using var crawler = CreateCrawler(options);
 
         var crawled = await crawler.CrawlAsync(
             new Uri(fixture.Url, "/LI_Monthly"),
@@ -132,10 +124,10 @@ public sealed class CrawlerIntegrationTests
     [Fact]
     public async Task ScrollsLazyChartsIntoViewBeforeExtraction()
     {
-        var browserExecutable = Environment.GetEnvironmentVariable("MCEINDEX_TEST_BROWSER");
-        if (string.IsNullOrWhiteSpace(browserExecutable))
+        var camofoxUrl = Environment.GetEnvironmentVariable("MCEINDEX_TEST_CAMOFOX_URL");
+        if (string.IsNullOrWhiteSpace(camofoxUrl))
         {
-            Assert.Skip("Set MCEINDEX_TEST_BROWSER to run the Playwright browser integration test.");
+            Assert.Skip("Set MCEINDEX_TEST_CAMOFOX_URL to run the Camofox browser integration test.");
         }
 
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -143,15 +135,11 @@ public sealed class CrawlerIntegrationTests
         var options = MceIndexOptions.Load(new Dictionary<string, string?>
         {
             ["MCEINDEX_BASE_URL"] = fixture.Url.AbsoluteUri,
-            ["MCEINDEX_BROWSER_EXECUTABLE"] = browserExecutable,
+            ["MCEINDEX_CAMOFOX_URL"] = camofoxUrl,
             ["MCEINDEX_TIMEOUT_MS"] = "10000",
             ["MCEINDEX_SETTLE_MS"] = "100",
         });
-        await using var crawler = new MceIndexCrawler(
-            options,
-            new MceIndexParser(),
-            TimeProvider.System,
-            NullLogger<MceIndexCrawler>.Instance);
+        await using var crawler = CreateCrawler(options);
 
         var crawled = await crawler.CrawlAsync(
             new Uri(fixture.Url, "/Meaningful_Retail"),
@@ -166,10 +154,10 @@ public sealed class CrawlerIntegrationTests
     [Fact]
     public async Task PreservesHorizontalAndTickMappedChartLabels()
     {
-        var browserExecutable = Environment.GetEnvironmentVariable("MCEINDEX_TEST_BROWSER");
-        if (string.IsNullOrWhiteSpace(browserExecutable))
+        var camofoxUrl = Environment.GetEnvironmentVariable("MCEINDEX_TEST_CAMOFOX_URL");
+        if (string.IsNullOrWhiteSpace(camofoxUrl))
         {
-            Assert.Skip("Set MCEINDEX_TEST_BROWSER to run the Playwright browser integration test.");
+            Assert.Skip("Set MCEINDEX_TEST_CAMOFOX_URL to run the Camofox browser integration test.");
         }
 
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -177,15 +165,11 @@ public sealed class CrawlerIntegrationTests
         var options = MceIndexOptions.Load(new Dictionary<string, string?>
         {
             ["MCEINDEX_BASE_URL"] = fixture.Url.AbsoluteUri,
-            ["MCEINDEX_BROWSER_EXECUTABLE"] = browserExecutable,
+            ["MCEINDEX_CAMOFOX_URL"] = camofoxUrl,
             ["MCEINDEX_TIMEOUT_MS"] = "10000",
             ["MCEINDEX_SETTLE_MS"] = "100",
         });
-        await using var crawler = new MceIndexCrawler(
-            options,
-            new MceIndexParser(),
-            TimeProvider.System,
-            NullLogger<MceIndexCrawler>.Instance);
+        await using var crawler = CreateCrawler(options);
 
         var crawled = await crawler.CrawlAsync(fixture.Url, cancellationToken);
 
@@ -204,10 +188,10 @@ public sealed class CrawlerIntegrationTests
     [Fact]
     public async Task RejectsOversizedChartSeries()
     {
-        var browserExecutable = Environment.GetEnvironmentVariable("MCEINDEX_TEST_BROWSER");
-        if (string.IsNullOrWhiteSpace(browserExecutable))
+        var camofoxUrl = Environment.GetEnvironmentVariable("MCEINDEX_TEST_CAMOFOX_URL");
+        if (string.IsNullOrWhiteSpace(camofoxUrl))
         {
-            Assert.Skip("Set MCEINDEX_TEST_BROWSER to run the Playwright browser integration test.");
+            Assert.Skip("Set MCEINDEX_TEST_CAMOFOX_URL to run the Camofox browser integration test.");
         }
 
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -215,15 +199,11 @@ public sealed class CrawlerIntegrationTests
         var options = MceIndexOptions.Load(new Dictionary<string, string?>
         {
             ["MCEINDEX_BASE_URL"] = fixture.Url.AbsoluteUri,
-            ["MCEINDEX_BROWSER_EXECUTABLE"] = browserExecutable,
+            ["MCEINDEX_CAMOFOX_URL"] = camofoxUrl,
             ["MCEINDEX_TIMEOUT_MS"] = "10000",
             ["MCEINDEX_SETTLE_MS"] = "100",
         });
-        await using var crawler = new MceIndexCrawler(
-            options,
-            new MceIndexParser(),
-            TimeProvider.System,
-            NullLogger<MceIndexCrawler>.Instance);
+        await using var crawler = CreateCrawler(options);
 
         var error = await Assert.ThrowsAsync<MceIndexException>(
             () => crawler.CrawlAsync(fixture.Url, cancellationToken));
@@ -239,19 +219,22 @@ public sealed class CrawlerIntegrationTests
         var options = MceIndexOptions.Load(new Dictionary<string, string?>
         {
             ["MCEINDEX_BASE_URL"] = "http://127.0.0.1:1/",
-            ["MCEINDEX_BROWSER_EXECUTABLE"] = "/does/not/exist",
+            ["MCEINDEX_CAMOFOX_URL"] = "http://127.0.0.1:1/",
+            ["MCEINDEX_CAMOFOX_EXECUTABLE"] = "/does/not/exist",
         });
-        await using var crawler = new MceIndexCrawler(
-            options,
-            new MceIndexParser(),
-            TimeProvider.System,
-            NullLogger<MceIndexCrawler>.Instance);
+        await using var crawler = CreateCrawler(options);
 
         var error = await Assert.ThrowsAsync<MceIndexException>(
             () => crawler.CrawlAsync(options.BaseUri, TestContext.Current.CancellationToken));
 
         Assert.Equal(MceIndexErrorCode.BrowserNotFound, error.Code);
     }
+
+    private static MceIndexCrawler CreateCrawler(MceIndexOptions options) => new(
+        options,
+        new MceIndexParser(),
+        TimeProvider.System,
+        new CamofoxClient(options, NullLogger<CamofoxClient>.Instance));
 
     private const string LifeIndexViewsHtml = """
         <!doctype html><html lang="zh-CN"><head><title>续命指数</title></head><body>

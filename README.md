@@ -20,22 +20,24 @@ MCEIndex MCP 是独立项目，抓取范围限于公开页面并遵守站点访�
 | 依赖 | 要求 |
 |---|---|
 | [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) | 运行 `dnx` 或安装 .NET Tool |
-| [Node.js 24 LTS](https://nodejs.org/) | `node` 或 `node.exe` 位于 `PATH` |
+| [Node.js 24 LTS](https://nodejs.org/) | 安装和运行 Camofox |
 | SQLite 3 | 提供系统 SQLite 动态库 |
-| Chrome 或 Chromium | 渲染 Streamlit 页面 |
+| [Camofox](https://github.com/jo-inc/camofox-browser) | 渲染 Streamlit 页面并处理 Cloudflare |
 
-Windows 10+ 提供 `winsqlite3.dll`，macOS 提供 `libsqlite3.dylib`。Debian 和 Ubuntu 可安装 `libsqlite3-0`：
+Windows 10+ 提供 `winsqlite3.dll`，macOS 提供 `libsqlite3.dylib`。Debian 和 Ubuntu 先安装 SQLite 与 Camofox 所需原生库，再安装 Camofox：
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y libsqlite3-0 chromium
+sudo apt-get install -y libsqlite3-0 libasound2
+npm install --global @askjo/camofox-browser@1.13.1
 ```
 
-检查 .NET 和 Node.js：
+检查运行环境：
 
 ```text
 dotnet --version
 node --version
+camofox-browser --help
 ```
 
 ### 2. 一次性运行
@@ -43,20 +45,20 @@ node --version
 .NET 10 的 `dnx` 会从 NuGet 下载、缓存并启动工具：
 
 ```bash
-dnx MCEIndex.Mcp@3.9.0
+dnx MCEIndex.Mcp@4.0.0
 ```
 
 ### 3. 全局安装
 
 ```bash
-dotnet tool install --global MCEIndex.Mcp --version 3.9.0
+dotnet tool install --global MCEIndex.Mcp --version 4.0.0
 dotnet tool list --global
 ```
 
 更新或卸载：
 
 ```bash
-dotnet tool update --global MCEIndex.Mcp --version 3.9.0
+dotnet tool update --global MCEIndex.Mcp --version 4.0.0
 dotnet tool uninstall --global MCEIndex.Mcp
 ```
 
@@ -77,7 +79,7 @@ MCP 客户端可以通过 `dnx` 直接启动：
   "mcpServers": {
     "mceindex": {
       "command": "dnx",
-      "args": ["MCEIndex.Mcp@3.9.0"]
+      "args": ["MCEIndex.Mcp@4.0.0"]
     }
   }
 }
@@ -88,19 +90,21 @@ Codex 使用相同的启动方式：
 ```toml
 [mcp_servers.mceindex]
 command = "dnx"
-args = ["MCEIndex.Mcp@3.9.0"]
+args = ["MCEIndex.Mcp@4.0.0"]
 startup_timeout_sec = 60
 tool_timeout_sec = 180
 ```
 
 全局安装时，`command` 使用上表中的绝对路径，并删除 `args`。
 
-服务从客户端的 `PATH` 查找 Node.js，并从标准安装目录查找 Chrome 或 Chromium。自定义路径使用以下环境变量：
+服务默认连接 `http://127.0.0.1:9377/`。如果该地址没有服务，它会从 `PATH` 查找并按需启动 `camofox-browser`，刷新结束后停止自己启动的浏览器。也可以连接预先运行的 Camofox：
 
 ```text
-PLAYWRIGHT_NODEJS_PATH=<Node.js 可执行文件绝对路径>
-MCEINDEX_BROWSER_EXECUTABLE=<Chrome 或 Chromium 可执行文件绝对路径>
+MCEINDEX_CAMOFOX_URL=http://127.0.0.1:9377/
+MCEINDEX_CAMOFOX_EXECUTABLE=/absolute/path/to/camofox-browser
 ```
+
+非回环服务必须使用 HTTPS，并设置与 Camofox `CAMOFOX_ACCESS_KEY` 相同的 `MCEINDEX_CAMOFOX_ACCESS_KEY`。
 
 ## 工具
 
@@ -137,12 +141,10 @@ MCEINDEX_BROWSER_EXECUTABLE=<Chrome 或 Chromium 可执行文件绝对路径>
 |---|---|---|
 | `MCEINDEX_BASE_URL` | `https://mceindex.com/` | 数据源地址；HTTP 仅用于本机测试 |
 | `MCEINDEX_DB_PATH` | 平台缓存目录下的 `mceindex_mcp/mceindex.db` | SQLite 索引路径 |
-| `MCEINDEX_BROWSER_EXECUTABLE` | 自动探测 | Chrome 或 Chromium 绝对路径 |
-| `PLAYWRIGHT_NODEJS_PATH` | 从 `PATH` 探测 | Node.js 绝对路径 |
-| `MCEINDEX_BROWSER_USER_AGENT` | 内置 Chrome UA | 浏览器 User-Agent |
-| `MCEINDEX_BROWSER_PROFILE` | 空 | 持久化浏览器 profile |
-| `MCEINDEX_CF_CLEARANCE` | 空 | 合法取得的 `cf_clearance` Cookie |
-| `MCEINDEX_HEADLESS` | `true` | 无头模式开关 |
+| `MCEINDEX_CAMOFOX_URL` | `http://127.0.0.1:9377/` | Camofox HTTP 服务地址 |
+| `MCEINDEX_CAMOFOX_EXECUTABLE` | 从 `PATH` 探测 | 无预运行服务时启动的 `camofox-browser` 路径 |
+| `MCEINDEX_CAMOFOX_ACCESS_KEY` | 空 | 远程 Camofox 的 Bearer access key；非回环地址必填 |
+| `MCEINDEX_CAMOFOX_PROFILE` | 平台缓存目录下的 `mceindex_mcp/camofox` | Camofox 持久化 profile 目录 |
 | `MCEINDEX_TIMEOUT_MS` | `45000` | 单页超时 |
 | `MCEINDEX_SETTLE_MS` | `1200` | DOM 稳定等待时间 |
 | `MCEINDEX_REFRESH_INTERVAL_MS` | `86400000` | 普通刷新间隔 |
@@ -169,4 +171,4 @@ dotnet test MceIndex.slnx --no-restore
 dotnet pack src/MceIndex.Mcp/MceIndex.Mcp.csproj -c Release --no-restore -o artifacts
 ```
 
-进程通过 stdio 传输 MCP JSON-RPC。stdout 专用于协议，stderr 输出运行日志。设置 `MCEINDEX_TEST_BROWSER` 可运行浏览器集成测试。
+进程通过 stdio 传输 MCP JSON-RPC。stdout 专用于协议，stderr 输出运行日志。启动测试用 Camofox 后设置 `MCEINDEX_TEST_CAMOFOX_URL` 可运行浏览器集成测试。
