@@ -112,8 +112,9 @@ public sealed class MceIndexService(MceIndexStore store, RefreshCoordinator refr
         {
             var window = stored.Snapshot.Charts.Skip(offset).Take(limit + 1).ToArray();
             var hasMore = window.Length > limit;
-            return new PageResult(stored.Summary, view, cards, stored.Snapshot.Headings, stored.Snapshot.Metrics,
-                [], [], window.Take(limit).ToArray(), offset, hasMore ? offset + limit : null, hasMore);
+            var charts = ChartResponseProjector.Project(window.Take(limit));
+            return new PageResult(stored.Summary, view, [], stored.Snapshot.Headings, stored.Snapshot.Metrics,
+                [], [], charts, offset, hasMore ? offset + limit : null, hasMore);
         }
 
         var entries = store.GetContent(stored.Summary.Slug, view, offset, limit + 1);

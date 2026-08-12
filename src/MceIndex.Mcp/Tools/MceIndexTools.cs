@@ -47,7 +47,7 @@ public sealed class MceIndexTools(MceIndexService service)
 
     [McpServerTool(Name = "get_page", Title = "读取指数栏目", ReadOnly = false,
         Destructive = false, Idempotent = true, OpenWorld = true, UseStructuredContent = true)]
-    [Description("按 slug 或中文栏目名读取结构化页面。当前 MCP 服务进程的首次查询会先刷新数据，后续调用只读取本地 SQLite；支持 summary、content、tables、charts。")]
+    [Description("按 slug 或中文栏目名读取结构化页面。当前 MCP 服务进程的首次查询会先刷新数据，后续调用只读取本地 SQLite；支持 summary、content、tables、charts。charts 仅返回当前页图表，不夹带指标卡；每个数据点包含规范日期、清洗后的数值和 displayValue。")]
     public Task<PageResult> GetPageAsync(
         [Description("页面 slug 或中文栏目名")] string page,
         [Description("summary、content、tables 或 charts；默认 summary")] PageView view = PageView.Summary,

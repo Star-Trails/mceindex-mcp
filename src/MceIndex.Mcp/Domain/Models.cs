@@ -46,7 +46,11 @@ public sealed record NavigationItem(string Text, NavigationKind Kind, string? Ur
 public sealed record Metric(string Label, string Value, string? Delta = null, string? Help = null);
 
 public sealed record DataTable(string[] Headers, string[][] Rows, string? Title = null);
-public sealed record ChartPoint(string? Category, double? Value, string? Text = null);
+public sealed record ChartPoint(
+    string? Category,
+    double? Value,
+    string? Text = null,
+    string? DisplayValue = null);
 
 public sealed record ChartSeries(string? Name, string? Type, ChartPoint[] Points);
 

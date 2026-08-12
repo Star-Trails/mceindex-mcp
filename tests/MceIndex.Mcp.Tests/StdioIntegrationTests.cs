@@ -35,7 +35,7 @@ public sealed class StdioIntegrationTests
             await using var client = await McpClient.CreateAsync(transport, cancellationToken: cancellationToken);
             Assert.Equal("MCEIndex", client.ServerInfo.Title);
             Assert.Equal("mceindex-mcp", client.ServerInfo.Name);
-            Assert.Equal("4.0.0", client.ServerInfo.Version);
+            Assert.Equal("4.0.1", client.ServerInfo.Version);
 
             var tools = await client.ListToolsAsync(cancellationToken: cancellationToken);
             Assert.Equal(

@@ -15,7 +15,6 @@ internal static class IndicatorTrendProjector
     private sealed record TrendDefinition(
         string Code,
         string PageSlug,
-        string ChartTitle,
         string SeriesName,
         string SeriesKey,
         string Label,
@@ -28,27 +27,27 @@ internal static class IndicatorTrendProjector
         new Dictionary<string, TrendDefinition>(StringComparer.Ordinal)
         {
             ["LEI-GDP"] = new(
-                "LEI-GDP", "LI_Monthly", "产业规模占比 · 图表 1", "产业规模占GDP比重",
+                "LEI-GDP", "LI_Monthly", "产业规模占GDP比重",
                 "industryScaleShare", "五大新产业规模占 GDP", "%", 0.05,
                 AssessmentMode.HigherIsBetter, "占比上升通常表示五大新产业在经济中的体量改善。"),
             ["LEI-EMP"] = new(
-                "LEI-EMP", "LI_Monthly", "直接就业能力 · 图表 1", "直接就业能力系数",
+                "LEI-EMP", "LI_Monthly", "直接就业能力系数",
                 "directEmploymentCapacity", "五大新产业直接就业能力系数", "系数", 0.001,
                 AssessmentMode.HigherIsBetter, "系数上升通常表示五大新产业的直接就业支撑能力改善。"),
             ["LEI-FIS"] = new(
-                "LEI-FIS", "LI_Monthly", "净财政能力 · 图表 1", "净财政贡献能力系数",
+                "LEI-FIS", "LI_Monthly", "净财政贡献能力系数",
                 "netFiscalCapacity", "五大新产业净财政贡献能力系数", "系数", 0.001,
                 AssessmentMode.HigherIsBetter, "系数上升（包括负值收窄）通常表示净财政贡献改善。"),
             ["MRS"] = new(
-                "MRS", "Meaningful_Retail", "<b><b></b></b>", "有意义社零同比",
+                "MRS", "Meaningful_Retail", "有意义社零同比",
                 "meaningfulRetail", "有意义社零同比", "%", 0.1,
                 AssessmentMode.HigherIsBetter, "同比增速上升通常表示消费动能改善。"),
             ["MCPI"] = new(
-                "MCPI", "Meaningful_CPI_PPI", "<b><b></b></b>", "有意义 CPI",
+                "MCPI", "Meaningful_CPI_PPI", "有意义 CPI",
                 "meaningfulCpi", "有意义 CPI", "%", 0.1,
                 AssessmentMode.ContextDependent, "通胀升降本身不能机械解释为改善或恶化，需结合通缩、目标区间与需求背景。"),
             ["MSF"] = new(
-                "MSF", "Meaningful_TSF", "<b><b></b></b>", "有意义社融",
+                "MSF", "Meaningful_TSF", "有意义社融",
                 "meaningfulSocialFinancing", "有意义社融月度流量", "亿元", 100,
                 AssessmentMode.ContextDependent, "融资流量具有季节性且不能证明资金最终用途，单凭升降不能判断经济改善或恶化。"),
         }.ToFrozenDictionary(StringComparer.Ordinal);
@@ -65,7 +64,6 @@ internal static class IndicatorTrendProjector
         }
 
         var chart = page.Snapshot.Charts.FirstOrDefault(candidate =>
-            candidate.Title.Equals(definition.ChartTitle, StringComparison.Ordinal) &&
             candidate.Series.Any(series => series.Name == definition.SeriesName));
         var series = chart?.Series.FirstOrDefault(candidate => candidate.Name == definition.SeriesName);
         if (series is null)

@@ -583,11 +583,29 @@ public sealed class MceIndexCrawler(
             return Array.from(values.subarray(0, MAX_POINTS_PER_SERIES));
           };
           const textOf = value => value == null ? null : String(value);
+          const plainTextOf = value => {
+            const text = textOf(value);
+            if (!text) return "";
+            const template = document.createElement("template");
+            template.innerHTML = text;
+            return (template.content.textContent || "").trim();
+          };
           const numberOf = value => {
-            if (typeof value === "number") return Number.isFinite(value) ? value : null;
+            if (typeof value === "number") return Number.isFinite(value) ? Number(value.toPrecision(15)) : null;
             if (typeof value !== "string" || value.trim() === "") return null;
             const parsed = Number(value);
-            return Number.isFinite(parsed) ? parsed : null;
+            return Number.isFinite(parsed) ? Number(parsed.toPrecision(15)) : null;
+          };
+          const categoryOf = value => {
+            const text = plainTextOf(value);
+            if (!text) return null;
+            const month = /^(\d{4})-(\d{2})(?:-01(?:[T ]00:00:00(?:\.0+)?(?:Z|[+-]00:00)?)?)?$/.exec(text);
+            if (month) return `${month[1]}-${month[2]}`;
+            if (/^\d{4}-\d{2}-\d{2}[T ]/.test(text)) {
+              const timestamp = Date.parse(text);
+              if (Number.isFinite(timestamp)) return new Date(timestamp).toISOString();
+            }
+            return text;
           };
           const headerFor = plot => {
             let cursor = plot.closest("[data-testid='stElementContainer']");
@@ -601,8 +619,9 @@ public sealed class MceIndexCrawler(
           if (plots.length > MAX_CHARTS) return "__MCEINDEX_RESOURCE_LIMIT__";
           const charts = plots.map((plot, chartIndex) => {
             const header = headerFor(plot), layout = plot._fullLayout || plot.layout || {};
-            const title = header?.querySelector("h1,h2,h3,h4,h5,h6")?.innerText || layout.title?.text || `图表 ${chartIndex + 1}`;
-            const description = header?.querySelector(".chart-header-summary")?.innerText || `MCEIndex 页面中的“${title}”图表。`;
+            const title = plainTextOf(header?.querySelector("h1,h2,h3,h4,h5,h6")?.innerText || layout.title?.text) ||
+              plainTextOf(layout.yaxis?.title?.text) || plainTextOf(layout.xaxis?.title?.text) || `图表 ${chartIndex + 1}`;
+            const description = plainTextOf(header?.querySelector(".chart-header-summary")?.innerText) || `MCEIndex 页面中的“${title}”图表。`;
             const notes = Array.from(header?.querySelectorAll("p:not(.chart-header-summary)") || []).map(element => element.innerText.trim()).filter(Boolean);
             const traces = Array.from(plot._fullData?.length ? plot._fullData : (plot.data || []));
             if (traces.length > MAX_SERIES_PER_CHART) extractionLimitExceeded = true;
@@ -619,9 +638,12 @@ public sealed class MceIndexCrawler(
               const count = Math.max(categories.length, numericValues.length, texts.length);
               if (count > MAX_POINTS_PER_SERIES || totalPoints > MAX_TOTAL_POINTS - count) { extractionLimitExceeded = true; return { name: textOf(trace.name), type: textOf(trace.type), points: [] }; }
               totalPoints += count;
-              return { name: textOf(trace.name), type: textOf(trace.type), points: Array.from({ length: count }, (_, index) => ({ category: textOf(categories[index]), value: numberOf(numericValues[index]), text: textOf(texts[index]) })) };
+              return { name: plainTextOf(trace.name) || null, type: textOf(trace.type), points: Array.from({ length: count }, (_, index) => {
+                const value = numberOf(numericValues[index]), text = plainTextOf(texts[index]) || null;
+                return { category: categoryOf(categories[index]), value, text, displayValue: text || (value == null ? null : String(value)) };
+              }) };
             }).filter(item => item.points.length > 0);
-            return { title: String(title).trim(), description: String(description).trim(), notes, xAxisTitle: textOf(layout.xaxis?.title?.text), yAxisTitle: textOf(layout.yaxis?.title?.text), series };
+            return { title, description, notes, xAxisTitle: plainTextOf(layout.xaxis?.title?.text) || null, yAxisTitle: plainTextOf(layout.yaxis?.title?.text) || null, series };
           }).filter(chart => chart.series.length > 0);
           return extractionLimitExceeded ? "__MCEINDEX_RESOURCE_LIMIT__" : charts;
         })()

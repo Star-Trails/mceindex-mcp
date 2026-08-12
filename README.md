@@ -45,20 +45,20 @@ camofox-browser --help
 .NET 10 的 `dnx` 会从 NuGet 下载、缓存并启动工具：
 
 ```bash
-dnx MCEIndex.Mcp@4.0.0
+dnx MCEIndex.Mcp@4.0.1
 ```
 
 ### 3. 全局安装
 
 ```bash
-dotnet tool install --global MCEIndex.Mcp --version 4.0.0
+dotnet tool install --global MCEIndex.Mcp --version 4.0.1
 dotnet tool list --global
 ```
 
 更新或卸载：
 
 ```bash
-dotnet tool update --global MCEIndex.Mcp --version 4.0.0
+dotnet tool update --global MCEIndex.Mcp --version 4.0.1
 dotnet tool uninstall --global MCEIndex.Mcp
 ```
 
@@ -79,7 +79,7 @@ MCP 客户端可以通过 `dnx` 直接启动：
   "mcpServers": {
     "mceindex": {
       "command": "dnx",
-      "args": ["MCEIndex.Mcp@4.0.0"]
+      "args": ["MCEIndex.Mcp@4.0.1"]
     }
   }
 }
@@ -90,7 +90,7 @@ Codex 使用相同的启动方式：
 ```toml
 [mcp_servers.mceindex]
 command = "dnx"
-args = ["MCEIndex.Mcp@4.0.0"]
+args = ["MCEIndex.Mcp@4.0.1"]
 startup_timeout_sec = 60
 tool_timeout_sec = 180
 ```
@@ -121,6 +121,8 @@ MCEINDEX_CAMOFOX_EXECUTABLE=/absolute/path/to/camofox-browser
 `get_latest` 的每组 `trend` 包含历史序列、环比变化、同比变化、最近 3 个月均值相对前 3 个月的动量、`direction`、`assessment`、判断依据和口径解释。`direction` 描述数值走势；`assessment` 才表示经济含义。产业规模、就业、净财政贡献和消费按指标方向返回 `improving`、`deteriorating`、`stable` 或 `mixed`。CPI 和社融不能仅凭升降判断经济好坏，因此返回 `indeterminate`，避免制造虚假结论。历史不足时返回 `insufficientData`。
 
 `get_indicator` 的 `months` 控制返回窗口，范围 2–120，默认 24。例如 `indicator=LEI-GDP, months=36`。环比和同比变化使用原序列单位；百分比指标表示百分点变化，不计算跨零时容易误导的相对百分比。读数同时保留网站值、统计期、来源和完整核验信息。数据期晚于审计期时保留上次审计的可信度、来源、算法和复现记录，并标注 `auditedPeriod`、`appliesToCurrentPeriod=false` 和 `dataUpdated=true`。`get_page` 与 `search_index` 使用 `offset` 和 `limit` 分页。
+
+`get_page(view=charts)` 仅返回当前栏目的图表，不附带全局指标卡。图表标题和 HTML 标签会被清洗；月度日期统一为 `YYYY-MM`，其他日期使用 ISO 8601；每个数据点同时包含清洗后的数值 `value` 和面向展示的 `displayValue`。
 
 `discover_data` 汇总六个主题、当前读数、趋势判断、指标意义、典型问题、页面目录和后续查询建议，适合在指标名称未知或问题范围较宽时使用。
 

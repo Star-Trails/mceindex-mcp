@@ -86,6 +86,51 @@ public sealed class ServiceTests
         Assert.Equal(2, crawler.CallCount);
     }
 
+    [Fact]
+    public async Task ChartViewOmitsCardsAndProjectsChartData()
+    {
+        using var store = new MceIndexStore(":memory:");
+        var timeProvider = new ManualTimeProvider();
+        var source = CreatePage(new Uri("http://127.0.0.1:3000/Meaningful_TSF"), timeProvider.GetUtcNow());
+        var crawled = source with
+        {
+            Snapshot = source.Snapshot with
+            {
+                Cards =
+                [
+                    new IndexCard("MSF", "有意义社融", "68.2%", "2026-06", "2026-06", "说明"),
+                ],
+                Charts =
+                [
+                    new ChartData(
+                        "<b><b></b></b>",
+                        "MCEIndex 页面中的“<b><b></b></b>”图表。",
+                        [],
+                        "月份",
+                        "三项流量（亿元）",
+                        [new ChartSeries("有意义社融", "bar",
+                            [new ChartPoint("2026-06-01T00:00:00.000000", 0.30000000000000004)])]),
+                ],
+            },
+        };
+        store.ApplyPages([new IndexedPage("Meaningful_TSF", "有意义社融", crawled)], timeProvider.GetUtcNow());
+        store.RecordRefresh(timeProvider.GetUtcNow(), [], true);
+        var crawler = new FakeCrawler(timeProvider);
+        await using var coordinator = new RefreshCoordinator(
+            Options(), store, crawler, timeProvider, NullLogger<RefreshCoordinator>.Instance);
+        var service = new MceIndexService(store, coordinator);
+
+        var result = await service.GetPageAsync(
+            "有意义社融", PageView.Charts, 0, 50, CancellationToken.None);
+
+        Assert.Empty(result.Cards);
+        var chart = Assert.Single(result.Charts);
+        Assert.Equal("三项流量（亿元）", chart.Title);
+        var point = Assert.Single(Assert.Single(chart.Series).Points);
+        Assert.Equal(("2026-06", 0.3, "0.3"), (point.Category, point.Value, point.DisplayValue));
+        Assert.Equal(0, crawler.CallCount);
+    }
+
     private static MceIndexOptions Options() => new()
     {
         BaseUri = new Uri("http://127.0.0.1:3000/"),
