@@ -1,6 +1,6 @@
 # MCEIndex MCP 使用指南（Windows 版）
 
-本文档介绍如何在 Windows 环境下配置并使用 MCEIndex MCP（Go Edition）。
+本文档介绍如何在 Windows 环境下配置并使用 MCEIndex MCP 服务。
 
 ---
 

@@ -1,21 +1,19 @@
-# MCEIndex MCP (Go Edition)
+# MCEIndex MCP
 
 面向 [有意义中国经济指数（mceindex.com）](https://mceindex.com/) 的本地索引 MCP（Model Context Protocol）服务。
 
-本项目采用 100% 纯 Go 技术栈对 [Star-Trails/mceindex-mcp](https://github.com/Star-Trails/mceindex-mcp) 进行全新架构重构：彻底剔除 Node.js、Camofox 和 CGO 外部重度依赖，实现单二进制文件零配置分发、毫秒级响应与超低内存占用。
-
 ---
 
-## 核心特性与架构升级
+## 核心特性
 
 1. **单二进制静态交付（Zero CGO 与 Zero External Dependencies）**：
-   - 采用纯 Go SQLite 驱动（内置 FTS5 Trigram 中文三元分词），无需安装 GCC 或 CGO 编译环境，全平台一键静态交叉编译。
-   - 不依赖 Node.js、npm、Python 或 Camofox，下载即可直接运行。
+   - 采用嵌入式 SQLite 驱动（内置 FTS5 Trigram 中文三元分词），无需配置外部 CGO 编译环境，全平台静态编译。
+   - 下载即可直接运行。
 2. **系统浏览器智能复用与反反爬**：
    - 自动检测并复用操作系统内置的 Microsoft Edge（`msedge.exe`）或 Google Chrome / Chromium。
    - 注入 Stealth 隐身补丁，绕过 Cloudflare Turnstile 质询验证。
 3. **Plotly.js 内存对象高精度直取**：
-   - 注入 JavaScript 直接读取挂载在 DOM 上的 Plotly 原始数据对象（`_fullData`），支持 TypedArray 及 Base64 二进制解码，100% 还原时间序列浮点精度。
+   - 注入 JavaScript 直接读取挂载在 DOM 上的 Plotly 原始数据对象（`_fullData`），支持 TypedArray 及 Base64 二进制解码，完整还原时间序列浮点精度。
 4. **全自动分段视图遍历与行业下钻**：
    - 自动遍历“五大新产业续命指数”的 5 大子视图与 5 大行业（集成电路、新能源汽车等），采集 23 张全量图表与 1,470+ 历史数据点。
 5. **严密宏观经济趋势与防偏评估引擎**：
