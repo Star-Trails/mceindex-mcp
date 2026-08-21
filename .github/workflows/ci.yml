@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: Test and Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          check-latest: true
+
+      - name: Verify Module Dependencies
+        run: go mod verify
+
+      - name: Run Vet
+        run: go vet ./...
+
+      - name: Run Tests
+        run: go test -v -race -covermode=atomic ./...
+
+  build:
+    name: Cross-Platform Build Verification
+    runs-on: ubuntu-latest
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - os: windows
+            arch: amd64
+            ext: .exe
+          - os: linux
+            arch: amd64
+            ext: ""
+          - os: darwin
+            arch: arm64
+            ext: ""
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          check-latest: true
+
+      - name: Build Binary
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          go build -trimpath -ldflags="-s -w" -o mceindex-mcp-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }} ./cmd/mceindex-mcp

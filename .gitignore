@@ -1,0 +1,29 @@
+# Binaries in root
+/mceindex-mcp
+/mceindex-mcp.exe
+/mceindex-mcp-*
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test and coverage artifacts
+*.out
+*.test
+
+# Go workspace
+go.work
+go.work.sum
+
+# Local SQLite databases and caches
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.cache/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
