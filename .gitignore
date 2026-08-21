@@ -1,21 +1,29 @@
-.dotnet/
-.dotnet-libs/
-.dotnet-home/
-.nuget/
-**/bin/
-**/obj/
-artifacts/
-.env
-.browser-libs/
-.playwright-browsers/
-chrome/
-chrome-headless-shell/
-*.deb
-.vs/
-.idea/
+# Binaries in root
+/mceindex-mcp
+/mceindex-mcp.exe
+/mceindex-mcp-*
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test and coverage artifacts
+*.out
+*.test
+
+# Go workspace
+go.work
+go.work.sum
+
+# Local SQLite databases and caches
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.cache/
+
+# IDE / OS
 .vscode/
+.idea/
 .DS_Store
-TestResults/
-coverage/
-*.user
-*.suo
+Thumbs.db

@@ -1,176 +1,124 @@
-# MCEIndex MCP
+# MCEIndex MCP (Go Edition)
 
-面向 [有意义中国经济指数（mceindex.com）](https://mceindex.com/) 的本地索引 MCP 服务。它将公开页面中的指标卡、统计期、解释文本和 Plotly 图表写入 SQLite，并通过 stdio 提供结构化查询。
+[![Go Version](https://img.shields.io/badge/Go-1.27%2B-blue.svg)](https://golang.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-MCEIndex MCP 是独立项目，抓取范围限于公开页面并遵守站点访问控制。查询结果包含 `sourceUrl` 和 `fetchedAt`，便于核对来源与抓取时间。
+面向 [有意义中国经济指数（mceindex.com）](https://mceindex.com/) 的本地索引 MCP（Model Context Protocol）服务。
 
-## 功能
+本项目采用 **100% 纯 Go 技术栈** 对 [Star-Trails/mceindex-mcp](https://github.com/Star-Trails/mceindex-mcp)（C# / Camofox 方案）进行全新架构重构：**彻底剔除 Node.js、Camofox 和 CGO 外部重度依赖**，实现单二进制文件零配置分发、毫秒级响应与超低内存占用。
 
-- 主动展示可查询主题、当前读数、指标意义和典型问题
-- 读取月度总览和单项经济指标
-- 按栏目读取正文、表格和图表
-- 使用 SQLite FTS5 trigram 搜索中文内容与指标代码
-- 将抓取结果保存在本地，支持离线查询
-- 通过 MCP JSON Schema 返回结构化数据
+---
 
-## 快速开始
+## 🌟 核心特性与架构升级
 
-### 1. 准备运行环境
+1. **单二进制静态交付（Zero CGO & Zero External Dependencies）**：
+   - 采用纯 Go SQLite 驱动（内置 FTS5 Trigram 中文三元分词），无需安装 GCC/CGO 环境，全平台一键交叉编译。
+   - 不依赖 Node.js、npm、Python 或 Camofox，下载即可运行。
+2. **系统浏览器智能复用与反反爬**：
+   - 自动检测复用操作系统内置的 Edge（`msedge.exe`）或 Chrome/Chromium；
+   - 注入 Stealth 隐身补丁，完美绕过 Cloudflare Turnstile 质询盾。
+3. **Plotly.js 内存对象高精度直取**：
+   - 注入 JavaScript 直接读取挂载在 DOM 上的 Plotly 原始数据对象（`_fullData`），支持 TypedArray / Base64 二进制解码，100% 还原时间序列浮点精度。
+4. **全自动分段视图遍历与行业下钻**：
+   - 自动遍历「五大新产业续命指数」的 5 大子视图与 5 大行业（集成电路、新能源汽车等），采集 23 张全量图表与 1,470+ 历史数据点。
+5. **严密宏观经济趋势与防偏评估引擎**：
+   - 精确计算环比（MoM）、同比（YoY）、近 3 个月动量（Momentum）与走势方向；
+   - **关键防偏机制**：`MCPI`（通胀）与 `MSF`（社融）强制判定为 `indeterminate`，避免将升降机械解释为经济好坏。
+6. **权威审计核验与数据溯源**：
+   - 内置包含国家统计局、教育部、人社部、财政部、人民银行等 18 个权威数据源的核验矩阵。
+7. **极速响应与本地缓存熔断**：
+   - 所有 MCP 客户端查询直接从本地 SQLite 毫秒级读取；浏览器仅在 24 小时刷新时临时运行数秒，完成后立即释放内存。
 
-| 依赖 | 要求 |
-|---|---|
-| [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) | 运行 `dnx` 或安装 .NET Tool |
-| [Node.js 24 LTS](https://nodejs.org/) | 安装和运行 Camofox |
-| SQLite 3 | 提供系统 SQLite 动态库 |
-| [Camofox](https://github.com/jo-inc/camofox-browser) | 渲染 Streamlit 页面并处理 Cloudflare |
+---
 
-Windows 10+ 提供 `winsqlite3.dll`，macOS 提供 `libsqlite3.dylib`。Debian 和 Ubuntu 先安装 SQLite 与 Camofox 所需原生库，再安装 Camofox：
+## 🚀 快速开始
 
-```bash
-sudo apt-get update
-sudo apt-get install -y libsqlite3-0 libasound2
-npm install --global @askjo/camofox-browser@1.13.1
-```
+### 1. 编译构建
 
-检查运行环境：
-
-```text
-dotnet --version
-node --version
-camofox-browser --help
-```
-
-### 2. 一次性运行
-
-.NET 10 的 `dnx` 会从 NuGet 下载、缓存并启动工具：
+需预先安装 [Go 1.27+](https://golang.org/dl/)：
 
 ```bash
-dnx MCEIndex.Mcp@4.0.1
+# 克隆仓库
+git clone https://github.com/Star-Trails/mceindex-mcp.git
+cd mceindex-mcp
+
+# 编译当前平台可执行文件
+go build -o mceindex-mcp ./cmd/mceindex-mcp
 ```
 
-### 3. 全局安装
+### 2. 配置 MCP 客户端
 
-```bash
-dotnet tool install --global MCEIndex.Mcp --version 4.0.1
-dotnet tool list --global
-```
+#### Claude Desktop
 
-更新或卸载：
-
-```bash
-dotnet tool update --global MCEIndex.Mcp --version 4.0.1
-dotnet tool uninstall --global MCEIndex.Mcp
-```
-
-全局工具的默认路径：
-
-| 平台 | `command` |
-|---|---|
-| Windows | `%USERPROFILE%\.dotnet\tools\mceindex-mcp.exe` |
-| Linux | `$HOME/.dotnet/tools/mceindex-mcp` |
-| macOS | `$HOME/.dotnet/tools/mceindex-mcp` |
-
-## 配置 MCP 客户端
-
-MCP 客户端可以通过 `dnx` 直接启动：
+在 `claude_desktop_config.json` 中配置：
 
 ```json
 {
   "mcpServers": {
     "mceindex": {
-      "command": "dnx",
-      "args": ["MCEIndex.Mcp@4.0.1"]
+      "command": "/绝对路径/mceindex-mcp",
+      "args": []
     }
   }
 }
 ```
 
-Codex 使用相同的启动方式：
+*Windows 用户示例：`"command": "C:\\path\\to\\mceindex-mcp.exe"`*
+
+#### Cursor / Codex
+
+在 Cursor 或 Codex 的 MCP 配置文件中添加：
 
 ```toml
 [mcp_servers.mceindex]
-command = "dnx"
-args = ["MCEIndex.Mcp@4.0.1"]
+command = "/绝对路径/mceindex-mcp"
 startup_timeout_sec = 60
 tool_timeout_sec = 180
 ```
 
-全局安装时，`command` 使用上表中的绝对路径，并删除 `args`。
+---
 
-服务默认连接 `http://127.0.0.1:9377/`。如果该地址没有服务，它会从 `PATH` 查找并按需启动 `camofox-browser`，刷新结束后停止自己启动的浏览器。也可以连接预先运行的 Camofox：
+## 🛠️ 提供的 MCP Tools
 
-```text
-MCEINDEX_CAMOFOX_URL=http://127.0.0.1:9377/
-MCEINDEX_CAMOFOX_EXECUTABLE=/absolute/path/to/camofox-browser
-```
-
-非回环服务必须使用 HTTPS，并设置与 Camofox `CAMOFOX_ACCESS_KEY` 相同的 `MCEINDEX_CAMOFOX_ACCESS_KEY`。
-
-## 工具
-
-| 工具 | 用途 | 主要参数 |
+| 工具名称 | 功能说明 | 关键参数 |
 |---|---|---|
-| `discover_data` | 发现可查询主题、当前读数、历史趋势及改善或恶化判断 | 无 |
-| `get_latest` | 返回六组最新读数及最近 13 个月趋势 | 无 |
-| `get_indicator` | 按代码或中文名称读取指标及历史序列 | `indicator`、`months=24` |
-| `list_pages` | 列出已索引栏目和刷新状态 | 无 |
-| `get_page` | 读取栏目摘要、正文、表格或图表 | `page`、`view`、`offset`、`limit` |
-| `search_index` | 搜索中文内容或指标代码 | `query`、`page`、`kind`、`mode`、`offset`、`limit` |
-| `refresh_index` | 刷新全部栏目 | `force=false` |
+| `discover_data` | **数据发现入口**。汇总六个主题、当前读数、历史趋势、指标意义、典型问题与建议工具。 | 无 |
+| `get_latest` | 返回月度总览的六组结构化读数、近 13 个月趋势及权威审计核验信息。 | 无 |
+| `get_indicator` | 按代码或中文名读取单项指标可调历史序列（2-120 个月）。代码支持：`LEI-GDP`、`LEI-EMP`、`LEI-FIS`、`MRS`、`MCPI`、`MSF`。 | `indicator` (string, 必填), `months` (int, 默认 24) |
+| `list_pages` | 列出本地已索引栏目和刷新状态。 | 无 |
+| `get_page` | 按栏目读取结构化页面（`summary` / `content` / `tables` / `charts`）。 | `page` (string, 必填), `view`, `offset`, `limit` |
+| `search_index` | 使用 SQLite FTS5 Trigram 全文检索中文内容与指标代码。 | `query` (string, 必填), `page`, `kind`, `mode`, `offset`, `limit` |
+| `refresh_index` | 触发全量抓取更新本地 SQLite 缓存（受 24h 刷新间隔与 60s 硬冷却保护）。 | `force` (bool, 默认 false) |
 
-`get_latest` 的每组 `trend` 包含历史序列、环比变化、同比变化、最近 3 个月均值相对前 3 个月的动量、`direction`、`assessment`、判断依据和口径解释。`direction` 描述数值走势；`assessment` 才表示经济含义。产业规模、就业、净财政贡献和消费按指标方向返回 `improving`、`deteriorating`、`stable` 或 `mixed`。CPI 和社融不能仅凭升降判断经济好坏，因此返回 `indeterminate`，避免制造虚假结论。历史不足时返回 `insufficientData`。
+---
 
-`get_indicator` 的 `months` 控制返回窗口，范围 2–120，默认 24。例如 `indicator=LEI-GDP, months=36`。环比和同比变化使用原序列单位；百分比指标表示百分点变化，不计算跨零时容易误导的相对百分比。读数同时保留网站值、统计期、来源和完整核验信息。数据期晚于审计期时保留上次审计的可信度、来源、算法和复现记录，并标注 `auditedPeriod`、`appliesToCurrentPeriod=false` 和 `dataUpdated=true`。`get_page` 与 `search_index` 使用 `offset` 和 `limit` 分页。
+## ⚙️ 环境变量配置
 
-`get_page(view=charts)` 仅返回当前栏目的图表，不附带全局指标卡。图表标题和 HTML 标签会被清洗；月度日期统一为 `YYYY-MM`，其他日期使用 ISO 8601；每个数据点同时包含清洗后的数值 `value` 和面向展示的 `displayValue`。
+所有配置项均支持环境变量覆盖，具备合理的开箱即用默认值：
 
-`discover_data` 汇总六个主题、当前读数、趋势判断、指标意义、典型问题、页面目录和后续查询建议，适合在指标名称未知或问题范围较宽时使用。
-
-## 数据更新
-
-- 当前 MCP 进程的首个查询会刷新索引，并在刷新完成后读取 SQLite。
-- 后续查询直接读取本地索引。
-- 首次刷新失败且本地已有数据时，查询返回最近一次成功结果；空库返回 `INDEX_EMPTY`。
-- `refresh_index(force=false)` 遵守 24 小时刷新间隔。
-- `refresh_index(force=true)` 忽略 24 小时间隔，仍执行 60 秒硬冷却。
-- 单页抓取失败时保留该页最近一次成功内容。
-
-`refresh_index` 返回 `completed`、`partial` 或 `skipped`。
-
-## 环境变量
-
-| 环境变量 | 默认值 | 用途 |
+| 环境变量 | 默认值 | 用途说明 |
 |---|---|---|
-| `MCEINDEX_BASE_URL` | `https://mceindex.com/` | 数据源地址；HTTP 仅用于本机测试 |
-| `MCEINDEX_DB_PATH` | 平台缓存目录下的 `mceindex_mcp/mceindex.db` | SQLite 索引路径 |
-| `MCEINDEX_CAMOFOX_URL` | `http://127.0.0.1:9377/` | Camofox HTTP 服务地址 |
-| `MCEINDEX_CAMOFOX_EXECUTABLE` | 从 `PATH` 探测 | 无预运行服务时启动的 `camofox-browser` 路径 |
-| `MCEINDEX_CAMOFOX_ACCESS_KEY` | 空 | 远程 Camofox 的 Bearer access key；非回环地址必填 |
-| `MCEINDEX_CAMOFOX_PROFILE` | 平台缓存目录下的 `mceindex_mcp/camofox` | Camofox 持久化 profile 目录 |
-| `MCEINDEX_TIMEOUT_MS` | `45000` | 单页超时 |
-| `MCEINDEX_SETTLE_MS` | `1200` | DOM 稳定等待时间 |
-| `MCEINDEX_REFRESH_INTERVAL_MS` | `86400000` | 普通刷新间隔 |
-| `MCEINDEX_CRAWL_DELAY_MS` | `3000` | 页面请求间隔 |
-| `MCEINDEX_CRAWL_CONCURRENCY` | `1` | 抓取并发，范围 1–4 |
-| `MCEINDEX_MAX_PAGES` | `20` | 单次刷新页面上限，范围 5–100 |
+| `MCEINDEX_BASE_URL` | `https://mceindex.com/` | 数据源地址 |
+| `MCEINDEX_DB_PATH` | 用户缓存目录下的 `mceindex_mcp/mceindex.db` | SQLite 数据库存储路径 |
+| `MCEINDEX_BROWSER_EXECUTABLE` | 自动探测系统 Edge/Chrome | 自定义指定无头浏览器可执行文件路径 |
+| `MCEINDEX_TIMEOUT_MS` | `45000` (45s) | 单页面加载与就绪超时 (ms) |
+| `MCEINDEX_SETTLE_MS` | `1200` (1.2s) | DOM 稳定静默等待时间 (ms) |
+| `MCEINDEX_REFRESH_INTERVAL_MS` | `86400000` (24h) | 自动刷新周期 (ms) |
+| `MCEINDEX_CRAWL_DELAY_MS` | `3000` (3s) | 页面请求间隔防封保护 (ms) |
+| `MCEINDEX_CRAWL_CONCURRENCY` | `1` | 抓取并发数 (1~4) |
+| `MCEINDEX_MAX_PAGES` | `20` | 单次刷新抓取页面上限 (5~100) |
 
-Cloudflare 验证失败返回 `ACCESS_CHALLENGE`。其他错误码包括 `BROWSER_NOT_FOUND`、`LOAD_TIMEOUT`、`PAGE_NOT_FOUND`、`INDICATOR_NOT_FOUND`、`INDEX_EMPTY`、`INVALID_CONFIGURATION`、`EXTRACTION_FAILED`、`DATABASE_ERROR` 和 `INTERNAL_ERROR`。
+---
 
-## 开发
-
-直接运行：
+## 🧪 自动化测试
 
 ```bash
-dotnet run --project src/MceIndex.Mcp/MceIndex.Mcp.csproj
+# 运行全部单元测试
+go test -v ./...
 ```
 
-构建与测试：
+---
 
-```bash
-dotnet restore
-dotnet build MceIndex.slnx --no-restore
-dotnet test MceIndex.slnx --no-restore
-dotnet pack src/MceIndex.Mcp/MceIndex.Mcp.csproj -c Release --no-restore -o artifacts
-```
+## 📄 开源许可证
 
-进程通过 stdio 传输 MCP JSON-RPC。stdout 专用于协议，stderr 输出运行日志。启动测试用 Camofox 后设置 `MCEINDEX_TEST_CAMOFOX_URL` 可运行浏览器集成测试。
+本项目基于 [MIT License](LICENSE) 开源。
