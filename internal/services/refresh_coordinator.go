@@ -82,16 +82,16 @@ func (rc *RefreshCoordinator) IsStale() bool {
 
 // ShouldRefresh determines whether a background refresh is warranted.
 func (rc *RefreshCoordinator) ShouldRefresh() bool {
+	if rc.store.CountPages() == 0 {
+		return true
+	}
+
 	lastAttemptVal, ok := rc.store.GetMeta("last_refresh_attempt")
 	if ok && lastAttemptVal != "" {
 		t, err := time.Parse(time.RFC3339Nano, lastAttemptVal)
 		if err == nil && time.Since(t) < rc.options.RefreshInterval {
 			return false
 		}
-	}
-
-	if rc.store.CountPages() == 0 {
-		return true
 	}
 
 	return rc.IsStale()

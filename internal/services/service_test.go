@@ -152,3 +152,24 @@ func TestMceServiceGetPageAndSearch(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, searchRes.Hits)
 }
+
+func TestRefreshCoordinator_ShouldRefreshWhenEmpty(t *testing.T) {
+	st, err := store.NewStore(":memory:")
+	require.NoError(t, err)
+	defer st.Close()
+
+	// Record recent refresh attempt (e.g. 5 minutes ago)
+	recent := time.Now().UTC().Add(-5 * time.Minute)
+	err = st.SetMeta("last_refresh_attempt", recent.Format(time.RFC3339Nano))
+	require.NoError(t, err)
+
+	u, _ := url.Parse("https://mceindex.com/")
+	opts := &config.Options{
+		BaseURL:         u,
+		RefreshInterval: 24 * time.Hour,
+	}
+
+	coord := NewRefreshCoordinator(opts, st, &mockCrawler{})
+	// Even though last_refresh_attempt was within RefreshInterval, CountPages() == 0 must return true
+	assert.True(t, coord.ShouldRefresh(), "ShouldRefresh should return true when database is empty")
+}

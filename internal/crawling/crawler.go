@@ -37,7 +37,7 @@ var (
 		"/LI_Monthly":         {Initial: 1, Captured: 23, Points: 1_470},
 		"/Meaningful_CPI_PPI": {Initial: 3, Captured: 3, Points: 1_159},
 		"/Meaningful_TSF":     {Initial: 2, Captured: 2, Points: 144},
-		"/Meaningful_Retail":  {Initial: 2, Captured: 2, Points: 256},
+		"/Meaningful_Retail":  {Initial: 2, Captured: 2, Points: 150},
 	}
 )
 
@@ -185,7 +185,7 @@ func (c *MceCrawler) navigateAndHydrate(ctx context.Context, page *rod.Page, tar
 	}
 
 	readyExpr := fmt.Sprintf(`
-		(async () => {
+		async () => {
 			const sleep = ms => new Promise(r => setTimeout(r, ms));
 			const deadline = Date.now() + %d;
 			while (Date.now() < deadline) {
@@ -196,9 +196,8 @@ func (c *MceCrawler) navigateAndHydrate(ctx context.Context, page *rod.Page, tar
 				await sleep(200);
 			}
 			return { ready: false, html: document.documentElement.outerHTML };
-		})()
+		}
 	`, c.options.RequestTimeout.Milliseconds(), expectedCharts)
-
 	val, err := page.Eval(readyExpr)
 	if err != nil {
 		return domain.WrapError(domain.ErrCodeLoadTimeout, "Error evaluating ready expression", err)
@@ -208,7 +207,7 @@ func (c *MceCrawler) navigateAndHydrate(ctx context.Context, page *rod.Page, tar
 		Ready bool   `json:"ready"`
 		HTML  string `json:"html"`
 	}
-	_ = json.Unmarshal([]byte(val.Value.String()), &res)
+	_ = json.Unmarshal([]byte(val.Value.JSON("", "")), &res)
 
 	if parsing.IsAccessChallenge(res.HTML) {
 		return domain.NewError(domain.ErrCodeAccessChallenge, "Cloudflare verification blocked MCEIndex acquisition.")
@@ -234,7 +233,7 @@ func (c *MceCrawler) captureDocuments(page *rod.Page, documents *[]string, total
 	}
 
 	expr := fmt.Sprintf(`
-		(() => {
+		() => {
 			const documents = [document.documentElement.outerHTML];
 			for (const frame of document.querySelectorAll("iframe")) {
 				try {
@@ -246,7 +245,7 @@ func (c *MceCrawler) captureDocuments(page *rod.Page, documents *[]string, total
 				return { limitExceeded: true, documents: [] };
 			}
 			return { limitExceeded: false, documents };
-		})()
+		}
 	`, remainingDocs, remainingChars)
 
 	val, err := page.Eval(expr)
@@ -258,7 +257,7 @@ func (c *MceCrawler) captureDocuments(page *rod.Page, documents *[]string, total
 		LimitExceeded bool     `json:"limitExceeded"`
 		Documents     []string `json:"documents"`
 	}
-	_ = json.Unmarshal([]byte(val.Value.String()), &res)
+	_ = json.Unmarshal([]byte(val.Value.JSON("", "")), &res)
 
 	if res.LimitExceeded {
 		return totalChars, domain.NewError(domain.ErrCodeExtractionFailed, "MCEIndex HTML exceeded safe extraction limits.")
@@ -292,13 +291,12 @@ func (c *MceCrawler) extractCharts(page *rod.Page) ([]domain.ChartData, error) {
 		return nil, domain.WrapError(domain.ErrCodeExtractionFailed, "Failed to extract charts", err)
 	}
 
-	strVal := val.Value.String()
-	if strVal == `"__MCEINDEX_RESOURCE_LIMIT__"` || strVal == "__MCEINDEX_RESOURCE_LIMIT__" {
+	if val.Value.Str() == "__MCEINDEX_RESOURCE_LIMIT__" {
 		return nil, domain.NewError(domain.ErrCodeExtractionFailed, "MCEIndex chart data exceeded safe extraction limits.")
 	}
 
 	var charts []domain.ChartData
-	if err := json.Unmarshal([]byte(strVal), &charts); err != nil {
+	if err := json.Unmarshal([]byte(val.Value.JSON("", "")), &charts); err != nil {
 		return []domain.ChartData{}, nil
 	}
 	return charts, nil
@@ -306,7 +304,7 @@ func (c *MceCrawler) extractCharts(page *rod.Page) ([]domain.ChartData, error) {
 
 func (c *MceCrawler) selectAllHistory(page *rod.Page) (bool, error) {
 	expr := fmt.Sprintf(`
-		(async () => {
+		async () => {
 			const sleep = ms => new Promise(r => setTimeout(r, ms));
 			const deadline = Date.now() + %d;
 			let changed = false;
@@ -325,7 +323,7 @@ func (c *MceCrawler) selectAllHistory(page *rod.Page) (bool, error) {
 			if (inactive) return { changed, complete: false };
 			await sleep(%d);
 			return { changed, complete: true };
-		})()
+		}
 	`, c.options.RequestTimeout.Milliseconds(), c.options.DomQuietPeriod.Milliseconds(), c.options.DomQuietPeriod.Milliseconds())
 
 	val, err := page.Eval(expr)
@@ -337,7 +335,7 @@ func (c *MceCrawler) selectAllHistory(page *rod.Page) (bool, error) {
 		Changed  bool `json:"changed"`
 		Complete bool `json:"complete"`
 	}
-	_ = json.Unmarshal([]byte(val.Value.String()), &res)
+	_ = json.Unmarshal([]byte(val.Value.JSON("", "")), &res)
 
 	if !res.Complete {
 		return false, domain.NewError(domain.ErrCodeExtractionFailed, "MCEIndex did not activate every visible All-history control.")
@@ -446,21 +444,19 @@ func (c *MceCrawler) captureOtherIndustries(
 
 func (c *MceCrawler) getActiveView(page *rod.Page) (string, error) {
 	viewsJSON, _ := json.Marshal(lifeIndexViews)
-	expr := fmt.Sprintf(`(() => [...document.querySelectorAll("button[data-testid='stBaseButton-segmented_controlActive']")].map(btn => btn.innerText.trim()).find(text => %s.includes(text)) || null)()`, string(viewsJSON))
+	expr := fmt.Sprintf(`() => [...document.querySelectorAll("button[data-testid='stBaseButton-segmented_controlActive']")].map(btn => btn.innerText.trim()).find(text => %s.includes(text)) || null`, string(viewsJSON))
 
 	val, err := page.Eval(expr)
-	if err != nil || val.Value.String() == "null" || val.Value.String() == `""` {
+	if err != nil || val.Value.Str() == "" {
 		return "", domain.NewError(domain.ErrCodeExtractionFailed, "MCEIndex did not expose the expected life-index view selector.")
 	}
-	var view string
-	_ = json.Unmarshal([]byte(val.Value.String()), &view)
-	return view, nil
+	return val.Value.Str(), nil
 }
 
 func (c *MceCrawler) selectView(page *rod.Page, view string) error {
 	viewJSON, _ := json.Marshal(view)
 	expr := fmt.Sprintf(`
-		(async () => {
+		async () => {
 			const target = %s;
 			const sleep = ms => new Promise(r => setTimeout(r, ms));
 			const button = [...document.querySelectorAll("button")].find(btn => btn.innerText.trim() === target && btn.getClientRects().length > 0);
@@ -474,7 +470,7 @@ func (c *MceCrawler) selectView(page *rod.Page, view string) error {
 				await sleep(100);
 			}
 			return false;
-		})()
+		}
 	`, string(viewJSON), c.options.RequestTimeout.Milliseconds(), c.options.DomQuietPeriod.Milliseconds())
 
 	val, err := page.Eval(expr)
@@ -486,12 +482,11 @@ func (c *MceCrawler) selectView(page *rod.Page, view string) error {
 }
 
 func (c *MceCrawler) getSelectedIndustry(page *rod.Page) (string, error) {
-	val, err := page.Eval(`(() => document.querySelector("[data-testid='stSelectbox'] [value]")?.getAttribute('value') || null)()`)
-	if err != nil || val.Value.String() == "null" {
+	val, err := page.Eval(`() => document.querySelector("[data-testid='stSelectbox'] [value]")?.getAttribute('value') || null`)
+	if err != nil || val.Value.Str() == "" {
 		return "", domain.NewError(domain.ErrCodeExtractionFailed, "MCEIndex did not expose a supported selected industry.")
 	}
-	var ind string
-	_ = json.Unmarshal([]byte(val.Value.String()), &ind)
+	ind := val.Value.Str()
 
 	found := false
 	for _, target := range lifeIndexIndustries {
@@ -509,7 +504,7 @@ func (c *MceCrawler) getSelectedIndustry(page *rod.Page) (string, error) {
 func (c *MceCrawler) selectIndustry(page *rod.Page, industry string) error {
 	indJSON, _ := json.Marshal(industry)
 	expr := fmt.Sprintf(`
-		(async () => {
+		async () => {
 			const target = %s;
 			const sleep = ms => new Promise(r => setTimeout(r, ms));
 			const select = document.querySelector("[data-testid='stSelectbox'] [role='combobox']");
@@ -531,7 +526,7 @@ func (c *MceCrawler) selectIndustry(page *rod.Page, industry string) error {
 				await sleep(100);
 			}
 			return false;
-		})()
+		}
 	`, string(indJSON), c.options.RequestTimeout.Milliseconds(), c.options.DomQuietPeriod.Milliseconds())
 
 	val, err := page.Eval(expr)
@@ -544,7 +539,7 @@ func (c *MceCrawler) selectIndustry(page *rod.Page, industry string) error {
 
 func (c *MceCrawler) scrollLazyContent(page *rod.Page) {
 	expr := fmt.Sprintf(`
-		(async () => {
+		async () => {
 			const sleep = ms => new Promise(r => setTimeout(r, ms));
 			for (let offset = 0; offset < document.documentElement.scrollHeight; offset += 700) {
 				window.scrollTo(0, offset);
@@ -553,14 +548,14 @@ func (c *MceCrawler) scrollLazyContent(page *rod.Page) {
 			window.scrollTo(0, 0);
 			await sleep(%d);
 			return true;
-		})()
+		}
 	`, c.options.DomQuietPeriod.Milliseconds())
 	_, _ = page.Eval(expr)
 }
 
 func (c *MceCrawler) waitForChartsStable(page *rod.Page) {
 	expr := fmt.Sprintf(`
-		(async () => {
+		async () => {
 			const sleep = ms => new Promise(r => setTimeout(r, ms));
 			const signature = () => [...document.querySelectorAll("[data-testid='stPlotlyChart'] .js-plotly-plot")].map(plot =>
 				(plot._fullData?.length ? plot._fullData : (plot.data || [])).map(trace =>
@@ -575,14 +570,14 @@ func (c *MceCrawler) waitForChartsStable(page *rod.Page) {
 				if (current && Date.now() - unchangedSince >= %d) return true;
 			}
 			return false;
-		})()
+		}
 	`, c.options.RequestTimeout.Milliseconds(), c.options.DomQuietPeriod.Milliseconds())
 	_, _ = page.Eval(expr)
 }
 
 func (c *MceCrawler) waitForDomQuiet(page *rod.Page) {
 	expr := fmt.Sprintf(`
-		(() => new Promise(resolve => {
+		() => new Promise(resolve => {
 			const root = document.querySelector("[data-testid='stMain'], main");
 			if (!root) { resolve(false); return; }
 			let quietTimer;
@@ -593,26 +588,23 @@ func (c *MceCrawler) waitForDomQuiet(page *rod.Page) {
 			observer.observe(root, { subtree: true, childList: true, attributes: true, characterData: true });
 			maxTimer = setTimeout(() => finish(false), %d);
 			arm();
-		}))()
+		})
 	`, c.options.DomQuietPeriod.Milliseconds(), c.options.RequestTimeout.Milliseconds())
 	_, _ = page.Eval(expr)
 }
 
 func (c *MceCrawler) assertNoChallenge(page *rod.Page) {
-	val, err := page.Eval("(() => document.documentElement.outerHTML)()")
-	if err == nil && parsing.IsAccessChallenge(val.Value.String()) {
+	val, err := page.Eval("() => document.documentElement.outerHTML")
+	if err == nil && parsing.IsAccessChallenge(val.Value.Str()) {
 		panic(domain.NewError(domain.ErrCodeAccessChallenge, "Cloudflare verification blocked MCEIndex acquisition."))
 	}
 }
 
 func (c *MceCrawler) getSource(page *rod.Page, fallback *url.URL) *url.URL {
-	val, err := page.Eval("(() => location.href)()")
-	if err == nil {
-		var href string
-		if err := json.Unmarshal([]byte(val.Value.String()), &href); err == nil {
-			if u, err := url.Parse(href); err == nil {
-				return u
-			}
+	val, err := page.Eval("() => location.href")
+	if err == nil && val.Value.Str() != "" {
+		if u, err := url.Parse(val.Value.Str()); err == nil {
+			return u
 		}
 	}
 	return fallback
@@ -743,7 +735,7 @@ func validateResourceLimits(charts []domain.ChartData) error {
 }
 
 const chartExtractionExpression = `
-(() => {
+() => {
   const MAX_CHARTS = 32, MAX_SERIES_PER_CHART = 32, MAX_POINTS_PER_SERIES = 10000;
   const MAX_TOTAL_POINTS = 100000, MAX_BINARY_CHARACTERS = 1000000;
   let extractionLimitExceeded = false, totalPoints = 0;
@@ -830,5 +822,5 @@ const chartExtractionExpression = `
   }).filter(chart => chart.series.length > 0);
   if (extractionLimitExceeded) return "__MCEINDEX_RESOURCE_LIMIT__";
   return charts;
-})()
+}
 `
